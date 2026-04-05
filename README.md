@@ -303,5 +303,21 @@ Viva-ready	🔥🔥🔥
 > “I designed a fully explainable pipeline using TF-IDF, n-grams, and POS-based linguistic features. I created a suspicious centroid from limited labeled data and used multi-metric similarity scoring combined with statistical filtering and clustering to identify hidden suspicious patterns in Rating 4 chats.”
 
 
+Stage 3: Removes Statistically Typical Messages (Entropy-Based Filtering)
+The Concept: We use Shannon Entropy to measure the "Information Surprise" in a chat.
+How it works: Social chatter is highly predictable (repetitive phrases, greetings). Malicious intent or "Sus" chats often have Low Entropy (highly specific, coded language) or High Entropy (unusual word combinations).
+The Technique: Build a Baseline Language Model (using a simple N-gram probability table) from your "Normal" messages.
+The Filter: Calculate the Perplexity of each new chat.
+If the Perplexity is low, the message is "Statistically Typical" (Standard office talk).
+Action: Discard typical messages. Only keep "Surprising" messages.
+Explainability: "This chat was removed because its linguistic pattern matches 95% of our historical 'Safe' data."
+Stage 4: Removes Linguistically Normal Clusters (Unsupervised Geometry)
+The Concept: Instead of Transformers, use Latent Semantic Analysis (LSA)—which is essentially SVD (Singular Value Decomposition) on your word counts.
+How it works: LSA compresses your 1,246 chats into a "Semantic Space" using linear algebra (no deep learning).
+The Technique: Apply HDBSCAN (Density-Based Clustering) on the LSA-transformed data.
+The Filter: * Most chats will fall into dense "Normal" clusters (The "Linguistically Normal" groups).
+The Suspects: Identify the Outliers—the chats that don't fit into any cluster.
+Explainability: Use a 2D Projection (like PCA) to show the clusters. You tell the analyst: "These 800 chats are in the 'Social' circle. These 5 chats are outliers floating in the 'Risk' zone."
+
 
 
