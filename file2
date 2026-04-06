@@ -1,7 +1,6 @@
 # =========================================================
-# CHAT ALERT REDUCTION PIPELINE
-# Rating 2–3 → suspicious reference
-# Rating 4 → filter + cluster + representative selection
+# HYBRID CHAT ALERT REDUCTION PIPELINE
+# TF-IDF + Word2Vec + Similarity + Graph Communities
 # =========================================================
 
 import pandas as pd
@@ -12,6 +11,9 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.decomposition import TruncatedSVD
 
+from gensim.models import Word2Vec
+
+import networkx as nx
 import matplotlib.pyplot as plt
 
 
@@ -19,8 +21,8 @@ import matplotlib.pyplot as plt
 # 1 LOAD DATASETS
 # ---------------------------------------------------------
 
-df_low = pd.read_csv("cleaned_reviews_23.csv")   # rating 2–3
-df_mid = pd.read_csv("cleaned_reviews_4.csv")    # rating 4
+df_low = pd.read_csv("cleaned_reviews_23.csv")   # suspicious chats
+df_mid = pd.read_csv("cleaned_reviews_4.csv")    # candidate chats
 
 low_text = df_low["chat"].astype(str)
 mid_text = df_mid["chat"].astype(str)
@@ -30,33 +32,76 @@ print("Rating 4 chats:", len(df_mid))
 
 
 # ---------------------------------------------------------
-# 2 BUILD SHARED TF-IDF VOCABULARY
+# 2 BUILD TF-IDF REPRESENTATION
 # ---------------------------------------------------------
 
 all_text = pd.concat([low_text, mid_text], ignore_index=True)
 
 vectorizer = TfidfVectorizer(
-    max_features=5000,
+    max_features=10000,
     ngram_range=(1,2),
     stop_words="english",
-    min_df=2,
-    max_df=0.9
+    min_df=1,
+    max_df=0.95
 )
 
 tfidf = vectorizer.fit_transform(all_text)
 
-
-# ---------------------------------------------------------
-# 3 SPLIT BACK INTO TWO GROUPS
-# ---------------------------------------------------------
-
-low_vec = tfidf[:len(df_low)]
-mid_vec = tfidf[len(df_low):]
+low_vec_tfidf = tfidf[:len(df_low)]
+mid_vec_tfidf = tfidf[len(df_low):]
 
 
 # ---------------------------------------------------------
-# 4 COMPUTE SIMILARITY
-# rating4 vs rating2–3
+# 3 TRAIN WORD2VEC MODEL
+# ---------------------------------------------------------
+
+tokenized = [text.split() for text in all_text]
+
+w2v_model = Word2Vec(
+    sentences=tokenized,
+    vector_size=100,
+    window=5,
+    min_count=1,
+    workers=4
+)
+
+print("Word2Vec vocabulary size:", len(w2v_model.wv))
+
+
+# ---------------------------------------------------------
+# 4 CREATE CHAT EMBEDDINGS
+# ---------------------------------------------------------
+
+def get_sentence_vector(sentence):
+
+    words = sentence.split()
+
+    vectors = []
+
+    for w in words:
+        if w in w2v_model.wv:
+            vectors.append(w2v_model.wv[w])
+
+    if len(vectors) == 0:
+        return np.zeros(100)
+
+    return np.mean(vectors, axis=0)
+
+
+low_vec_w2v = np.array([get_sentence_vector(t) for t in low_text])
+mid_vec_w2v = np.array([get_sentence_vector(t) for t in mid_text])
+
+
+# ---------------------------------------------------------
+# 5 COMBINE TF-IDF + WORD2VEC
+# ---------------------------------------------------------
+
+low_vec = np.hstack([low_vec_tfidf.toarray(), low_vec_w2v])
+mid_vec = np.hstack([mid_vec_tfidf.toarray(), mid_vec_w2v])
+
+
+# ---------------------------------------------------------
+# 6 COMPUTE SIMILARITY
 # ---------------------------------------------------------
 
 sim_matrix = cosine_similarity(mid_vec, low_vec)
@@ -67,53 +112,56 @@ df_mid["similarity_to_suspicious"] = max_similarity
 
 
 # ---------------------------------------------------------
-# 5 FILTER CANDIDATE CHATS
+# 7 AUTOMATIC THRESHOLD
 # ---------------------------------------------------------
 
-threshold = 0.20
+threshold = np.percentile(max_similarity, 85)
+
+print("Similarity threshold:", threshold)
+
+
+# ---------------------------------------------------------
+# 8 FILTER CANDIDATE CHATS
+# ---------------------------------------------------------
 
 df_candidate = df_mid[df_mid["similarity_to_suspicious"] > threshold].copy()
 
 print("Chats after similarity filtering:", len(df_candidate))
 
-
-# Safety check
 if df_candidate.empty:
-    print("No chats passed similarity threshold. Try lowering threshold.")
+    print("No chats passed threshold.")
     exit()
 
 
 # ---------------------------------------------------------
-# 6 VECTORIZE CANDIDATE CHATS
+# 9 VECTORIZE CANDIDATES
 # ---------------------------------------------------------
 
-candidate_text = df_candidate["chat"].astype(str)
+candidate_indices = df_candidate.index
 
-candidate_vec = vectorizer.transform(candidate_text)
+candidate_vec = mid_vec[candidate_indices]
 
 
 # ---------------------------------------------------------
-# 7 CLUSTER SIMILAR ALERT CONTEXTS
+# 10 CLUSTER SIMILAR ALERTS
 # ---------------------------------------------------------
-
-candidate_dense = candidate_vec.toarray()
 
 cluster_model = AgglomerativeClustering(
     n_clusters=None,
-    distance_threshold=1.0,
+    distance_threshold=0.5,
     metric="cosine",
     linkage="average"
 )
 
-clusters = cluster_model.fit_predict(candidate_dense)
+clusters = cluster_model.fit_predict(candidate_vec)
 
 df_candidate["cluster"] = clusters
 
-print("Total clusters:", df_candidate["cluster"].nunique())
+print("Clusters:", df_candidate["cluster"].nunique())
 
 
 # ---------------------------------------------------------
-# 8 SELECT REPRESENTATIVE CHAT PER CLUSTER
+# 11 REPRESENTATIVE CHAT PER CLUSTER
 # ---------------------------------------------------------
 
 representatives = []
@@ -122,74 +170,108 @@ for cluster_id in df_candidate["cluster"].unique():
 
     cluster_data = df_candidate[df_candidate["cluster"] == cluster_id]
 
-    cluster_vec = vectorizer.transform(cluster_data["chat"])
+    indices = cluster_data.index
 
-    centroid = cluster_vec.mean(axis=0).A   # sparse → dense
+    cluster_vec = mid_vec[indices]
+
+    centroid = cluster_vec.mean(axis=0).reshape(1,-1)
 
     sims = cosine_similarity(cluster_vec, centroid)
 
-    best_index = np.argmax(sims)
+    best_index = indices[np.argmax(sims)]
 
-    representative_chat = cluster_data.iloc[best_index]
+    representatives.append(df_mid.loc[best_index])
 
-    representatives.append(representative_chat)
+df_cluster_final = pd.DataFrame(representatives)
 
-df_final = pd.DataFrame(representatives)
-
-print("Final chats for analyst:", len(df_final))
+print("Cluster representatives:", len(df_cluster_final))
 
 
 # ---------------------------------------------------------
-# 9 SAVE OUTPUT
+# 12 BUILD SIMILARITY GRAPH
+# ---------------------------------------------------------
+
+candidate_similarity = cosine_similarity(candidate_vec)
+
+G = nx.Graph()
+
+n = candidate_similarity.shape[0]
+
+for i in range(n):
+
+    for j in range(i+1, n):
+
+        if candidate_similarity[i,j] > 0.4:
+
+            G.add_edge(i,j)
+
+components = list(nx.connected_components(G))
+
+print("Graph communities:", len(components))
+
+
+# ---------------------------------------------------------
+# 13 REPRESENTATIVE CHAT PER COMMUNITY
+# ---------------------------------------------------------
+
+graph_representatives = []
+
+candidate_indices_list = list(candidate_indices)
+
+for comp in components:
+
+    comp = list(comp)
+
+    original_indices = [candidate_indices_list[i] for i in comp]
+
+    comp_vec = mid_vec[original_indices]
+
+    centroid = comp_vec.mean(axis=0).reshape(1,-1)
+
+    sims = cosine_similarity(comp_vec, centroid)
+
+    best_index = original_indices[np.argmax(sims)]
+
+    graph_representatives.append(df_mid.loc[best_index])
+
+df_graph_final = pd.DataFrame(graph_representatives)
+
+print("Final representative chats:", len(df_graph_final))
+
+
+# ---------------------------------------------------------
+# 14 SAVE OUTPUT
 # ---------------------------------------------------------
 
 df_mid.sort_values("similarity_to_suspicious", ascending=False)\
       .to_csv("rating4_ranked_similarity.csv", index=False)
 
-df_candidate.to_csv("rating4_similarity_filtered.csv", index=False)
+df_candidate.to_csv("candidate_chats.csv", index=False)
 
-df_final.to_csv("final_representative_chats_for_analyst.csv", index=False)
+df_cluster_final.to_csv("cluster_representatives.csv", index=False)
 
-print("Files saved:")
-print("rating4_ranked_similarity.csv")
-print("rating4_similarity_filtered.csv")
-print("final_representative_chats_for_analyst.csv")
+df_graph_final.to_csv("graph_representative_chats.csv", index=False)
+
+print("Files saved.")
 
 
 # ---------------------------------------------------------
-# 10 VISUALIZATION USING SVD
+# 15 VISUALIZATION
 # ---------------------------------------------------------
 
-svd = TruncatedSVD(n_components=2, random_state=42)
+svd = TruncatedSVD(n_components=2)
 
-points_2d = svd.fit_transform(tfidf)
-
-low_points = points_2d[:len(df_low)]
-mid_points = points_2d[len(df_low):]
+points_2d = svd.fit_transform(mid_vec)
 
 plt.figure(figsize=(10,8))
 
-plt.scatter(
-    low_points[:,0],
-    low_points[:,1],
-    alpha=0.7,
-    label="Rating 2–3 (Suspicious)"
-)
+plt.scatter(points_2d[:,0], points_2d[:,1], alpha=0.5)
 
-plt.scatter(
-    mid_points[:,0],
-    mid_points[:,1],
-    alpha=0.5,
-    label="Rating 4"
-)
+plt.title("Chat Semantic Space")
 
-plt.title("Chat Similarity Visualization (SVD Projection)")
 plt.xlabel("Component 1")
 plt.ylabel("Component 2")
 
-plt.legend()
 plt.grid(True)
 
 plt.show()
-
-print("Visualization complete.")
