@@ -1,0 +1,60 @@
+import pandas as pd
+import spacy
+from sklearn.feature_extraction.text import TfidfVectorizer
+from scipy.sparse import hstack
+
+# -----------------------------------------
+# ✅ Load spaCy POS tagger
+# -----------------------------------------
+nlp = spacy.load("en_core_web_sm", disable=["ner", "parser"])
+
+# -----------------------------------------
+# ✅ 1. Load your single CSV file
+# -----------------------------------------
+df = pd.read_csv("cleaned_reviews_4.csv")   # ✅ update your filename
+chat_text = df["chat"].astype(str)
+
+# -----------------------------------------
+# ✅ 2. Extract POS tags for each chat entry
+# -----------------------------------------
+def extract_pos_sequences(texts):
+    pos_sequences = []
+    for doc in nlp.pipe(texts, batch_size=64):
+        pos_tags = " ".join([token.pos_ for token in doc])
+        pos_sequences.append(pos_tags)
+    return pos_sequences
+
+pos_text = extract_pos_sequences(chat_text)
+
+# -----------------------------------------
+# ✅ 3. TF-IDF for normal chat text (1–2 n-grams)
+# -----------------------------------------
+vectorizer_text = TfidfVectorizer(
+    ngram_range=(1, 2),
+    max_features=5000,
+    stop_words="english"
+)
+
+tfidf_text = vectorizer_text.fit_transform(chat_text)
+
+# -----------------------------------------
+# ✅ 4. TF-IDF for POS-tag sequences (1–2 n-grams)
+# -----------------------------------------
+vectorizer_pos = TfidfVectorizer(
+    ngram_range=(1, 2),
+    max_features=3000
+)
+
+tfidf_pos = vectorizer_pos.fit_transform(pos_text)
+
+# -----------------------------------------
+# ✅ 5. Combine both feature matrices
+# -----------------------------------------
+combined_features = hstack([tfidf_text, tfidf_pos])
+
+# -----------------------------------------
+# ✅ Output shapes
+# -----------------------------------------
+print("TF-IDF Text Shape:", tfidf_text.shape)
+print("TF-IDF POS Shape:", tfidf_pos.shape)
+print("Combined Feature Matrix:", combined_features.shape)
