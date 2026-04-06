@@ -1,106 +1,173 @@
+# =========================================================
+# CHAT ALERT REDUCTION PIPELINE
+# Rating 2–3 → suspicious reference
+# Rating 4 → filter + cluster + representative selection
+# =========================================================
+
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
-# ✅ Load datasets
-df_low = pd.read_csv("cleaned_reviews_23.csv")   # rating 2–3 dataset
-df_mid = pd.read_csv("cleaned_reviews_4.csv")    # rating 4 dataset
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.cluster import AgglomerativeClustering
+from sklearn.decomposition import TruncatedSVD
 
-# ✅ Use cleaned text
+import matplotlib.pyplot as plt
+
+# ---------------------------------------------------------
+# 1 LOAD DATASETS
+# ---------------------------------------------------------
+
+df_low = pd.read_csv("cleaned_reviews_23.csv")   # rating 2–3
+df_mid = pd.read_csv("cleaned_reviews_4.csv")    # rating 4
+
 low_text = df_low["chat"].astype(str)
 mid_text = df_mid["chat"].astype(str)
 
-# ✅ Combine for shared TF-IDF vocabulary
+print("Rating 2–3 chats:", len(df_low))
+print("Rating 4 chats:", len(df_mid))
+
+# ---------------------------------------------------------
+# 2 BUILD SHARED TF-IDF VOCABULARY
+# ---------------------------------------------------------
+
 all_text = pd.concat([low_text, mid_text], ignore_index=True)
 
-# ✅ Add n-grams (unigram + bigram)
-vectorizer = TfidfVectorizer(max_features=5000, ngram_range=(1, 2))
+vectorizer = TfidfVectorizer(
+    max_features=5000,
+    ngram_range=(1,2),
+    stop_words="english",
+    min_df=2,
+    max_df=0.9
+)
 
-tfidf_vectors = vectorizer.fit_transform(all_text)
+tfidf = vectorizer.fit_transform(all_text)
 
-# ✅ Split back into low and mid vectors
-low_vec = tfidf_vectors[: len(df_low)]
-mid_vec = tfidf_vectors[len(df_low):]
+# ---------------------------------------------------------
+# 3 SPLIT BACK INTO TWO GROUPS
+# ---------------------------------------------------------
 
-# ✅ Compute centroid of the low-rated group
-centroid = low_vec.mean(axis=0)
+low_vec = tfidf[:len(df_low)]
+mid_vec = tfidf[len(df_low):]
 
-# ✅ Normalize centroid → ensure it is a 2D numpy array
-centroid = np.asarray(centroid).reshape(1, -1)
+# ---------------------------------------------------------
+# 4 COMPUTE SIMILARITY
+# rating4 vs rating2–3
+# ---------------------------------------------------------
 
-# ✅ Compute similarity (0–1 scale)
-similarity_scores = cosine_similarity(mid_vec, centroid).reshape(-1)
+sim_matrix = cosine_similarity(mid_vec, low_vec)
 
-# ✅ Attach similarity scores to df_mid
-df_mid = df_mid.copy()
-df_mid["similarity_to_low"] = similarity_scores
+max_similarity = sim_matrix.max(axis=1)
 
-# ✅ Sort rating 4 reviews by similarity (descending)
-df_ranked = df_mid.sort_values(by="similarity_to_low", ascending=False)
+df_mid["similarity_to_suspicious"] = max_similarity
 
-# ✅ Convert similarity to percentage for thresholding
-df_ranked["similarity_percent"] = df_ranked["similarity_to_low"] * 100
+# ---------------------------------------------------------
+# 5 FILTER CANDIDATE CHATS
+# ---------------------------------------------------------
 
-# ✅ Apply threshold (example: >50%)
-threshold = 50
-df_filtered = df_ranked[df_ranked["similarity_percent"] > threshold]
+threshold = 0.20
 
-# ✅ Save outputs
-df_ranked.to_csv("mid_reviews_ranked_similarity.csv", index=False)
-df_filtered.to_csv("mid_reviews_similarity_above_50.csv", index=False)
+df_candidate = df_mid[df_mid["similarity_to_suspicious"] > threshold].copy()
 
-print("✅ Ranking complete!")
-print(f"✅ Reviews above {threshold}% similarity saved as mid_reviews_similarity_above_50.csv")
+print("Chats after similarity filtering:", len(df_candidate))
 
+# ---------------------------------------------------------
+# 6 VECTORIZE CANDIDATE CHATS
+# ---------------------------------------------------------
 
-import matplotlib.pyplot as plt
-from sklearn.decomposition import PCA
-import numpy as np
+candidate_text = df_candidate["chat"].astype(str)
 
-# ---------------------------------------------
-# ✅ 1. Combine low & mid TF-IDF vectors again
-# ---------------------------------------------
+candidate_vec = vectorizer.transform(candidate_text)
+
+# ---------------------------------------------------------
+# 7 CLUSTER SIMILAR ALERT CONTEXTS
+# ---------------------------------------------------------
+
+cluster_model = AgglomerativeClustering(
+    n_clusters=None,
+    distance_threshold=1.2,
+    metric="cosine",
+    linkage="average"
+)
+
+clusters = cluster_model.fit_predict(candidate_vec.toarray())
+
+df_candidate["cluster"] = clusters
+
+print("Total clusters:", df_candidate["cluster"].nunique())
+
+# ---------------------------------------------------------
+# 8 SELECT REPRESENTATIVE CHAT PER CLUSTER
+# ---------------------------------------------------------
+
+representatives = []
+
+for cluster_id in df_candidate["cluster"].unique():
+
+    cluster_data = df_candidate[df_candidate["cluster"] == cluster_id]
+
+    cluster_vec = vectorizer.transform(cluster_data["chat"])
+
+    centroid = cluster_vec.mean(axis=0)
+
+    sims = cosine_similarity(cluster_vec, centroid)
+
+    best_index = np.argmax(sims)
+
+    representative_chat = cluster_data.iloc[best_index]
+
+    representatives.append(representative_chat)
+
+df_final = pd.DataFrame(representatives)
+
+print("Final chats for analyst:", len(df_final))
+
+# ---------------------------------------------------------
+# 9 SAVE OUTPUT
+# ---------------------------------------------------------
+
+df_mid.sort_values("similarity_to_suspicious", ascending=False)\
+      .to_csv("rating4_ranked_similarity.csv", index=False)
+
+df_candidate.to_csv("rating4_similarity_filtered.csv", index=False)
+
+df_final.to_csv("final_representative_chats_for_analyst.csv", index=False)
+
+print("Files saved:")
+print("rating4_ranked_similarity.csv")
+print("rating4_similarity_filtered.csv")
+print("final_representative_chats_for_analyst.csv")
+
+# ---------------------------------------------------------
+# 10 VISUALIZATION USING SVD
+# ---------------------------------------------------------
+
 combined_vec = np.vstack([
     low_vec.toarray(),
     mid_vec.toarray()
 ])
 
-# ---------------------------------------------
-# ✅ 2. Run PCA (2D)
-# ---------------------------------------------
-pca = PCA(n_components=2, random_state=42)
-pca_points = pca.fit_transform(combined_vec)
+svd = TruncatedSVD(n_components=2, random_state=42)
 
-low_pca = pca_points[:len(df_low)]
-mid_pca = pca_points[len(df_low):]
+points_2d = svd.fit_transform(combined_vec)
 
-# ---------------------------------------------
-# ✅ 3. Transform centroid into PCA space
-# ---------------------------------------------
-centroid_pca = pca.transform(centroid)
+low_points = points_2d[:len(df_low)]
+mid_points = points_2d[len(df_low):]
 
-# ---------------------------------------------
-# ✅ 4. Plot everything
-# ---------------------------------------------
-plt.figure(figsize=(10, 8))
+plt.figure(figsize=(10,8))
 
-# Plot low rating 2–3 (baseline group)
-plt.scatter(low_pca[:,0], low_pca[:,1], 
-            color='blue', alpha=0.5, label='Rating 2–3 Reviews')
+plt.scatter(low_points[:,0], low_points[:,1],
+            alpha=0.6, label="Rating 2–3 (Suspicious)")
 
-# Plot rating-4 reviews
-plt.scatter(mid_pca[:,0], mid_pca[:,1], 
-            color='gray', alpha=0.6, label='Rating 4 Reviews')
+plt.scatter(mid_points[:,0], mid_points[:,1],
+            alpha=0.5, label="Rating 4")
 
-# Plot centroid
-plt.scatter(centroid_pca[:,0], centroid_pca[:,1],
-            color='red', marker='*', s=300, label='Suspicious Centroid (Rating 2–3 Mean)')
-
-plt.title("PCA Visualization of Reviews with Suspicious Centroid")
-plt.xlabel("PCA Component 1")
-plt.ylabel("PCA Component 2")
+plt.title("Chat Similarity Visualization (SVD Projection)")
+plt.xlabel("Component 1")
+plt.ylabel("Component 2")
 plt.legend()
 plt.grid(True)
+
 plt.show()
 
+print("Visualization complete.")
