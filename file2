@@ -1,173 +1,78 @@
-# =========================================================
-# CHAT ALERT REDUCTION PIPELINE
-# Rating 2–3 → suspicious reference
-# Rating 4 → filter + cluster + representative selection
-# =========================================================
+---------------------------------------------------------------------------
+TypeError                                 Traceback (most recent call last)
+Cell In[63], line 113
+    109 cluster_vec = vectorizer.transform(cluster_data["chat"])
+    111 centroid = cluster_vec.mean(axis=0)
+--> 113 sims = cosine_similarity(cluster_vec, centroid)
+    115 best_index = np.argmax(sims)
+    117 representative_chat = cluster_data.iloc[best_index]
 
-import pandas as pd
-import numpy as np
+File c:\Users\M006179\.conda\envs\test\lib\site-packages\sklearn\utils\_param_validation.py:218, in validate_params.<locals>.decorator.<locals>.wrapper(*args, **kwargs)
+    212 try:
+    213     with config_context(
+    214         skip_parameter_validation=(
+    215             prefer_skip_nested_validation or global_skip_validation
+    216         )
+    217     ):
+--> 218         return func(*args, **kwargs)
+    219 except InvalidParameterError as e:
+    220     # When the function is just a wrapper around an estimator, we allow
+    221     # the function to delegate validation to the estimator, but we replace
+    222     # the name of the estimator by the name of the function in the error
+    223     # message to avoid confusion.
+    224     msg = re.sub(
+    225         r"parameter of \w+ must be",
+    226         f"parameter of {func.__qualname__} must be",
+    227         str(e),
+    228     )
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.cluster import AgglomerativeClustering
-from sklearn.decomposition import TruncatedSVD
+File c:\Users\M006179\.conda\envs\test\lib\site-packages\sklearn\metrics\pairwise.py:1728, in cosine_similarity(X, Y, dense_output)
+   1675 @validate_params(
+   1676     {
+   1677         "X": ["array-like", "sparse matrix"],
+   (...)
+   1682 )
+   1683 def cosine_similarity(X, Y=None, dense_output=True):
+   1684     """Compute cosine similarity between samples in X and Y.
+   1685 
+   1686     Cosine similarity, or the cosine kernel, computes similarity as the
+   (...)
+   1726            [0.577, 0.816]])
+   1727     """
+-> 1728     X, Y = check_pairwise_arrays(X, Y)
+   1730     X_normalized = normalize(X, copy=True)
+   1731     if X is Y:
 
-import matplotlib.pyplot as plt
+File c:\Users\M006179\.conda\envs\test\lib\site-packages\sklearn\metrics\pairwise.py:209, in check_pairwise_arrays(X, Y, precomputed, dtype, accept_sparse, force_all_finite, ensure_all_finite, ensure_2d, copy)
+    199 else:
+    200     X = check_array(
+    201         X,
+    202         accept_sparse=accept_sparse,
+   (...)
+    207         ensure_2d=ensure_2d,
+    208     )
+--> 209     Y = check_array(
+    210         Y,
+    211         accept_sparse=accept_sparse,
+    212         dtype=dtype,
+    213         copy=copy,
+    214         ensure_all_finite=ensure_all_finite,
+    215         estimator=estimator,
+    216         ensure_2d=ensure_2d,
+    217     )
+    219 if precomputed:
+    220     if X.shape[1] != Y.shape[0]:
 
-# ---------------------------------------------------------
-# 1 LOAD DATASETS
-# ---------------------------------------------------------
+File c:\Users\M006179\.conda\envs\test\lib\site-packages\sklearn\utils\validation.py:883, in check_array(array, accept_sparse, accept_large_sparse, dtype, order, copy, force_writeable, force_all_finite, ensure_all_finite, ensure_non_negative, ensure_2d, allow_nd, ensure_min_samples, ensure_min_features, estimator, input_name)
+    880 ensure_all_finite = _deprecate_force_all_finite(force_all_finite, ensure_all_finite)
+    882 if isinstance(array, np.matrix):
+--> 883     raise TypeError(
+    884         "np.matrix is not supported. Please convert to a numpy array with "
+    885         "np.asarray. For more information see: "
+    886         "https://numpy.org/doc/stable/reference/generated/numpy.matrix.html"
+    887     )
+    889 xp, is_array_api_compliant = get_namespace(array)
+    891 # store reference to original array to check if copy is needed when
+    892 # function returns
 
-df_low = pd.read_csv("cleaned_reviews_23.csv")   # rating 2–3
-df_mid = pd.read_csv("cleaned_reviews_4.csv")    # rating 4
-
-low_text = df_low["chat"].astype(str)
-mid_text = df_mid["chat"].astype(str)
-
-print("Rating 2–3 chats:", len(df_low))
-print("Rating 4 chats:", len(df_mid))
-
-# ---------------------------------------------------------
-# 2 BUILD SHARED TF-IDF VOCABULARY
-# ---------------------------------------------------------
-
-all_text = pd.concat([low_text, mid_text], ignore_index=True)
-
-vectorizer = TfidfVectorizer(
-    max_features=5000,
-    ngram_range=(1,2),
-    stop_words="english",
-    min_df=2,
-    max_df=0.9
-)
-
-tfidf = vectorizer.fit_transform(all_text)
-
-# ---------------------------------------------------------
-# 3 SPLIT BACK INTO TWO GROUPS
-# ---------------------------------------------------------
-
-low_vec = tfidf[:len(df_low)]
-mid_vec = tfidf[len(df_low):]
-
-# ---------------------------------------------------------
-# 4 COMPUTE SIMILARITY
-# rating4 vs rating2–3
-# ---------------------------------------------------------
-
-sim_matrix = cosine_similarity(mid_vec, low_vec)
-
-max_similarity = sim_matrix.max(axis=1)
-
-df_mid["similarity_to_suspicious"] = max_similarity
-
-# ---------------------------------------------------------
-# 5 FILTER CANDIDATE CHATS
-# ---------------------------------------------------------
-
-threshold = 0.20
-
-df_candidate = df_mid[df_mid["similarity_to_suspicious"] > threshold].copy()
-
-print("Chats after similarity filtering:", len(df_candidate))
-
-# ---------------------------------------------------------
-# 6 VECTORIZE CANDIDATE CHATS
-# ---------------------------------------------------------
-
-candidate_text = df_candidate["chat"].astype(str)
-
-candidate_vec = vectorizer.transform(candidate_text)
-
-# ---------------------------------------------------------
-# 7 CLUSTER SIMILAR ALERT CONTEXTS
-# ---------------------------------------------------------
-
-cluster_model = AgglomerativeClustering(
-    n_clusters=None,
-    distance_threshold=1.2,
-    metric="cosine",
-    linkage="average"
-)
-
-clusters = cluster_model.fit_predict(candidate_vec.toarray())
-
-df_candidate["cluster"] = clusters
-
-print("Total clusters:", df_candidate["cluster"].nunique())
-
-# ---------------------------------------------------------
-# 8 SELECT REPRESENTATIVE CHAT PER CLUSTER
-# ---------------------------------------------------------
-
-representatives = []
-
-for cluster_id in df_candidate["cluster"].unique():
-
-    cluster_data = df_candidate[df_candidate["cluster"] == cluster_id]
-
-    cluster_vec = vectorizer.transform(cluster_data["chat"])
-
-    centroid = cluster_vec.mean(axis=0)
-
-    sims = cosine_similarity(cluster_vec, centroid)
-
-    best_index = np.argmax(sims)
-
-    representative_chat = cluster_data.iloc[best_index]
-
-    representatives.append(representative_chat)
-
-df_final = pd.DataFrame(representatives)
-
-print("Final chats for analyst:", len(df_final))
-
-# ---------------------------------------------------------
-# 9 SAVE OUTPUT
-# ---------------------------------------------------------
-
-df_mid.sort_values("similarity_to_suspicious", ascending=False)\
-      .to_csv("rating4_ranked_similarity.csv", index=False)
-
-df_candidate.to_csv("rating4_similarity_filtered.csv", index=False)
-
-df_final.to_csv("final_representative_chats_for_analyst.csv", index=False)
-
-print("Files saved:")
-print("rating4_ranked_similarity.csv")
-print("rating4_similarity_filtered.csv")
-print("final_representative_chats_for_analyst.csv")
-
-# ---------------------------------------------------------
-# 10 VISUALIZATION USING SVD
-# ---------------------------------------------------------
-
-combined_vec = np.vstack([
-    low_vec.toarray(),
-    mid_vec.toarray()
-])
-
-svd = TruncatedSVD(n_components=2, random_state=42)
-
-points_2d = svd.fit_transform(combined_vec)
-
-low_points = points_2d[:len(df_low)]
-mid_points = points_2d[len(df_low):]
-
-plt.figure(figsize=(10,8))
-
-plt.scatter(low_points[:,0], low_points[:,1],
-            alpha=0.6, label="Rating 2–3 (Suspicious)")
-
-plt.scatter(mid_points[:,0], mid_points[:,1],
-            alpha=0.5, label="Rating 4")
-
-plt.title("Chat Similarity Visualization (SVD Projection)")
-plt.xlabel("Component 1")
-plt.ylabel("Component 2")
-plt.legend()
-plt.grid(True)
-
-plt.show()
-
-print("Visualization complete.")
+TypeError: np.matrix is not supported. Please convert to a numpy array with np.asarray. For more information see: https://numpy.org/doc/stable/reference/generated/numpy.matrix.html
