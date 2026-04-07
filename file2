@@ -1,277 +1,318 @@
-# =========================================================
-# HYBRID CHAT ALERT REDUCTION PIPELINE
-# TF-IDF + Word2Vec + Similarity + Graph Communities
-# =========================================================
-
-import pandas as pd
 import numpy as np
+import pandas as pd
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.ensemble import IsolationForest
 from sklearn.cluster import AgglomerativeClustering
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_distances
 from sklearn.decomposition import TruncatedSVD
 
-from gensim.models import Word2Vec
+# ============================================================
+# 1. CONFIG
+# ============================================================
+csv_path = "3spy_with_sif_embeddings_filtered.csv"
+embeddings_path = "sif_pc_removed_embeddings.npy"
 
-import networkx as nx
-import matplotlib.pyplot as plt
+text_column = "chat_phrases"
+contamination = 0.10
+random_state = 42
 
+output_csv = "pipelineA_svd_chat_risk_ranking.csv"
 
-# ---------------------------------------------------------
-# 1 LOAD DATASETS
-# ---------------------------------------------------------
+# Agglomerative settings (COSINE + COMPLETE)
+linkage_type = "complete"
 
-df_low = pd.read_csv("cleaned_reviews_23.csv")   # suspicious chats
-df_mid = pd.read_csv("cleaned_reviews_4.csv")    # candidate chats
+# ============================================================
+# 2. LOAD DATA
+# ============================================================
+df = pd.read_csv(csv_path)
+X_raw = np.load(embeddings_path)
 
-low_text = df_low["chat"].astype(str)
-mid_text = df_mid["chat"].astype(str)
+assert len(df) == len(X_raw), "CSV row count and embedding count mismatch"
 
-print("Rating 2–3 chats:", len(df_low))
-print("Rating 4 chats:", len(df_mid))
+print("\n✅ STEP 2: DATA LOADED")
+print("Dataframe shape:", df.shape)
+print("Embedding shape:", X_raw.shape)
+print("- First 3 rows of text:")
+print(df[text_column].head(3), "\n")
 
+# ============================================================
+# 3. APPLY SVD (SEMANTIC COMPRESSION)
+# ============================================================
+print("Running SVD compression (100D)…")
 
-# ---------------------------------------------------------
-# 2 BUILD TF-IDF REPRESENTATION
-# ---------------------------------------------------------
+svd = TruncatedSVD(n_components=100, random_state=42)
+X_svd = svd.fit_transform(X_raw)
 
-all_text = pd.concat([low_text, mid_text], ignore_index=True)
+print("\n✅ STEP 3: SVD DONE")
+print("Original dimension:", X_raw.shape[1])
+print("Reduced dimension:", X_svd.shape[1])
+print("Explained variance (sum):", svd.explained_variance_ratio_.sum(), "\n")
 
-vectorizer = TfidfVectorizer(
-    max_features=10000,
-    ngram_range=(1,2),
-    stop_words="english",
-    min_df=1,
-    max_df=0.95
+if svd.explained_variance_ratio_.sum() < 0.40:
+    print("⚠ Warning: Low SVD semantic capture (<40%). Consider lowering components.")
+
+# ============================================================
+# 4. ANOMALY DETECTION (Isolation Forest)
+# ============================================================
+print("Running Isolation Forest on SVD+PC vectors…")
+
+iso = IsolationForest(
+    contamination=contamination,
+    random_state=random_state,
+    n_estimators=300
 )
 
-tfidf = vectorizer.fit_transform(all_text)
+iso.fit(X_svd)
+df["anomaly_score"] = -iso.score_samples(X_svd)
 
-low_vec_tfidf = tfidf[:len(df_low)]
-mid_vec_tfidf = tfidf[len(df_low):]
+print("\n✅ STEP 4: ANOMALY SCORES READY")
+print(df["anomaly_score"].describe(), "\n")
 
-
-# ---------------------------------------------------------
-# 3 TRAIN WORD2VEC MODEL
-# ---------------------------------------------------------
-
-tokenized = [text.split() for text in all_text]
-
-w2v_model = Word2Vec(
-    sentences=tokenized,
-    vector_size=100,
-    window=5,
-    min_count=1,
-    workers=4
-)
-
-print("Word2Vec vocabulary size:", len(w2v_model.wv))
-
-
-# ---------------------------------------------------------
-# 4 CREATE CHAT EMBEDDINGS
-# ---------------------------------------------------------
-
-def get_sentence_vector(sentence):
-
-    words = sentence.split()
-
-    vectors = []
-
-    for w in words:
-        if w in w2v_model.wv:
-            vectors.append(w2v_model.wv[w])
-
-    if len(vectors) == 0:
-        return np.zeros(100)
-
-    return np.mean(vectors, axis=0)
-
-
-low_vec_w2v = np.array([get_sentence_vector(t) for t in low_text])
-mid_vec_w2v = np.array([get_sentence_vector(t) for t in mid_text])
-
-
-# ---------------------------------------------------------
-# 5 COMBINE TF-IDF + WORD2VEC
-# ---------------------------------------------------------
-
-low_vec = np.hstack([low_vec_tfidf.toarray(), low_vec_w2v])
-mid_vec = np.hstack([mid_vec_tfidf.toarray(), mid_vec_w2v])
-
-
-# ---------------------------------------------------------
-# 6 COMPUTE SIMILARITY
-# ---------------------------------------------------------
-
-sim_matrix = cosine_similarity(mid_vec, low_vec)
-
-max_similarity = sim_matrix.max(axis=1)
-
-df_mid["similarity_to_suspicious"] = max_similarity
-
-
-# ---------------------------------------------------------
-# 7 AUTOMATIC THRESHOLD
-# ---------------------------------------------------------
-
-threshold = np.percentile(max_similarity, 85)
-
-print("Similarity threshold:", threshold)
-
-
-# ---------------------------------------------------------
-# 8 FILTER CANDIDATE CHATS
-# ---------------------------------------------------------
-
-df_candidate = df_mid[df_mid["similarity_to_suspicious"] > threshold].copy()
-
-print("Chats after similarity filtering:", len(df_candidate))
-
-if df_candidate.empty:
-    print("No chats passed threshold.")
-    exit()
-
-
-# ---------------------------------------------------------
-# 9 VECTORIZE CANDIDATES
-# ---------------------------------------------------------
-
-candidate_indices = df_candidate.index
-
-candidate_vec = mid_vec[candidate_indices]
-
-
-# ---------------------------------------------------------
-# 10 CLUSTER SIMILAR ALERTS
-# ---------------------------------------------------------
+# ============================================================
+# 5. AGGLOMERATIVE CLUSTERING (COSINE + COMPLETE)
+# ============================================================
+print("Running Agglomerative Clustering…")
 
 cluster_model = AgglomerativeClustering(
-    n_clusters=None,
-    distance_threshold=0.5,
     metric="cosine",
-    linkage="average"
+    linkage="complete",
+    distance_threshold=0.35,
+    n_clusters=None
 )
 
-clusters = cluster_model.fit_predict(candidate_vec)
+df["cluster_id"] = cluster_model.fit_predict(X_svd)
 
-df_candidate["cluster"] = clusters
+print("\n✅ STEP 5: CLUSTERING DONE")
+print("Unique clusters:", df["cluster_id"].nunique())
+print(df["cluster_id"].value_counts().head(), "\n")
 
-print("Clusters:", df_candidate["cluster"].nunique())
+# cluster sizes
+cluster_sizes = df["cluster_id"].value_counts().to_dict()
+df["cluster_size"] = df["cluster_id"].map(cluster_sizes)
+
+# rarity score
+df["cluster_rarity_score"] = 1 / (df["cluster_size"] + 1)
+
+print("Cluster rarity score sample:")
+print(df[["cluster_id", "cluster_size", "cluster_rarity_score"]].head(), "\n")
+
+# ============================================================
+# 6. DISTANCE TO CLUSTER CENTROID (COSINE)
+# ============================================================
+print("Computing distance to cluster centroids…")
+
+centroids = {}
+for cid in df["cluster_id"].unique():
+    idx = df.index[df["cluster_id"] == cid]
+    centroids[cid] = X_svd[idx].mean(axis=0)
+
+dist_list = []
+for i in range(len(df)):
+    cid = df.loc[i, "cluster_id"]
+    c = centroids[cid].reshape(1, -1)
+    d = cosine_distances(X_svd[i].reshape(1, -1), c)[0][0]
+    dist_list.append(d)
+
+df["distance_to_center"] = dist_list
+
+print("\n✅ STEP 6: DISTANCES READY")
+print(df["distance_to_center"].describe(), "\n")
+
+# ============================================================
+# 7. NORMALIZATION
+# ============================================================
+print("Normalizing anomaly/rarity/distance scores…")
+
+score_cols = ["anomaly_score", "cluster_rarity_score", "distance_to_center"]
+scaler = MinMaxScaler()
+scaled = scaler.fit_transform(df[score_cols])
+
+df["anomaly_scaled"] = scaled[:, 0]
+df["rarity_scaled"] = scaled[:, 1]
+df["distance_scaled"] = scaled[:, 2]
+
+print("\n✅ STEP 7: NORMALIZATION DONE")
+print(df[["anomaly_scaled", "rarity_scaled", "distance_scaled"]].head(), "\n")
+
+# ============================================================
+# 8. FINAL RISK SCORE
+# ============================================================
+df["final_risk_score"] = (
+    0.55 * df["anomaly_scaled"] +
+    0.25 * df["rarity_scaled"] +
+    0.20 * df["distance_scaled"]
+)
+
+print("✅ STEP 8: FINAL RISK SCORES CALCULATED")
+print(df["final_risk_score"].describe(), "\n")
+
+# ============================================================
+# 9. RISK BUCKETING
+# ============================================================
+high_cut = df["final_risk_score"].quantile(0.95)
+review_cut = df["final_risk_score"].quantile(0.80)
+
+df["risk_bucket"] = "likely_normal"
+df.loc[df["final_risk_score"] >= review_cut, "risk_bucket"] = "review"
+df.loc[df["final_risk_score"] >= high_cut, "risk_bucket"] = "high_risk"
+
+print("✅ STEP 9: BUCKETS READY")
+print(df["risk_bucket"].value_counts(), "\n")
+
+# ============================================================
+# 10. SAVE RESULTS
+# ============================================================
+df_ranked = df.sort_values("final_risk_score", ascending=False)
+df_ranked.to_csv(output_csv, index=False)
+
+print(f"✅ STEP 10: FILE SAVED → {output_csv}")
+
+# ============================================================
+# 11. PREVIEW
+# ============================================================
+preview_cols = [
+    "final_risk_score",
+    "risk_bucket",
+    "anomaly_score",
+    "cluster_id",
+    "cluster_size",
+    "cluster_rarity_score",
+    "distance_to_center"
+]
+
+if text_column in df_ranked.columns:
+    preview_cols.append(text_column)
+
+print("\n=== TOP 30 MOST SUSPICIOUS CHATS ===\n")
+print(df_ranked[preview_cols].head(30).to_string(index=False))
 
 
-# ---------------------------------------------------------
-# 11 REPRESENTATIVE CHAT PER CLUSTER
-# ---------------------------------------------------------
 
-representatives = []
+output:
 
-for cluster_id in df_candidate["cluster"].unique():
+✅ STEP 2: DATA LOADED
+Dataframe shape: (113, 215)
+Embedding shape: (113, 200)
+- First 3 rows of text:
+0    sloppy work but replaced it the printed design...
+1    turtle big for a men i will_look fo good size ...
+2    not bad this t shirt_is fair i do like it but ...
+Name: chat_phrases, dtype: object 
 
-    cluster_data = df_candidate[df_candidate["cluster"] == cluster_id]
+Running SVD compression (100D)…
 
-    indices = cluster_data.index
+✅ STEP 3: SVD DONE
+Original dimension: 200
+Reduced dimension: 100
+Explained variance (sum): 0.999822 
 
-    cluster_vec = mid_vec[indices]
+Running Isolation Forest on SVD+PC vectors…
 
-    centroid = cluster_vec.mean(axis=0).reshape(1,-1)
+✅ STEP 4: ANOMALY SCORES READY
+count    113.000000
+mean       0.432520
+std        0.011540
+min        0.390904
+25%        0.426671
+50%        0.433783
+75%        0.439672
+max        0.452000
+Name: anomaly_score, dtype: float64 
 
-    sims = cosine_similarity(cluster_vec, centroid)
+Running Agglomerative Clustering…
 
-    best_index = indices[np.argmax(sims)]
+✅ STEP 5: CLUSTERING DONE
+Unique clusters: 6
+cluster_id
+0    59
+2    37
+5    12
+1     3
+3     1
+Name: count, dtype: int64 
 
-    representatives.append(df_mid.loc[best_index])
+Cluster rarity score sample:
+   cluster_id  cluster_size  cluster_rarity_score
+0           0            59              0.016667
+1           3             1              0.500000
+2           2            37              0.026316
+3           0            59              0.016667
+4           5            12              0.076923 
 
-df_cluster_final = pd.DataFrame(representatives)
+Computing distance to cluster centroids…
 
-print("Cluster representatives:", len(df_cluster_final))
+✅ STEP 6: DISTANCES READY
+count    113.000000
+mean       0.032769
+std        0.024650
+min        0.000000
+25%        0.017876
+50%        0.025750
+75%        0.039611
+max        0.140281
+Name: distance_to_center, dtype: float64 
 
+Normalizing anomaly/rarity/distance scores…
 
-# ---------------------------------------------------------
-# 12 BUILD SIMILARITY GRAPH
-# ---------------------------------------------------------
+✅ STEP 7: NORMALIZATION DONE
+   anomaly_scaled  rarity_scaled  distance_scaled
+0        0.862137       0.000000         0.211390
+1        0.230346       1.000000         0.000000
+2        0.758379       0.019964         0.158217
+3        0.488046       0.000000         0.127428
+4        0.786641       0.124668         0.214211 
 
-candidate_similarity = cosine_similarity(candidate_vec)
+✅ STEP 8: FINAL RISK SCORES CALCULATED
+count    113.000000
+mean       0.433928
+std        0.118633
+min        0.028718
+25%        0.371406
+50%        0.447480
+75%        0.510975
+max        0.716040
+Name: final_risk_score, dtype: float64 
 
-G = nx.Graph()
+✅ STEP 9: BUCKETS READY
+risk_bucket
+likely_normal    90
+review           17
+high_risk         6
+Name: count, dtype: int64 
 
-n = candidate_similarity.shape[0]
+✅ STEP 10: FILE SAVED → pipelineA_svd_chat_risk_ranking.csv
 
-for i in range(n):
+=== TOP 30 MOST SUSPICIOUS CHATS ===
 
-    for j in range(i+1, n):
-
-        if candidate_similarity[i,j] > 0.4:
-
-            G.add_edge(i,j)
-
-components = list(nx.connected_components(G))
-
-print("Graph communities:", len(components))
-
-
-# ---------------------------------------------------------
-# 13 REPRESENTATIVE CHAT PER COMMUNITY
-# ---------------------------------------------------------
-
-graph_representatives = []
-
-candidate_indices_list = list(candidate_indices)
-
-for comp in components:
-
-    comp = list(comp)
-
-    original_indices = [candidate_indices_list[i] for i in comp]
-
-    comp_vec = mid_vec[original_indices]
-
-    centroid = comp_vec.mean(axis=0).reshape(1,-1)
-
-    sims = cosine_similarity(comp_vec, centroid)
-
-    best_index = original_indices[np.argmax(sims)]
-
-    graph_representatives.append(df_mid.loc[best_index])
-
-df_graph_final = pd.DataFrame(graph_representatives)
-
-print("Final representative chats:", len(df_graph_final))
-
-
-# ---------------------------------------------------------
-# 14 SAVE OUTPUT
-# ---------------------------------------------------------
-
-df_mid.sort_values("similarity_to_suspicious", ascending=False)\
-      .to_csv("rating4_ranked_similarity.csv", index=False)
-
-df_candidate.to_csv("candidate_chats.csv", index=False)
-
-df_cluster_final.to_csv("cluster_representatives.csv", index=False)
-
-df_graph_final.to_csv("graph_representative_chats.csv", index=False)
-
-print("Files saved.")
-
-
-# ---------------------------------------------------------
-# 15 VISUALIZATION
-# ---------------------------------------------------------
-
-svd = TruncatedSVD(n_components=2)
-
-points_2d = svd.fit_transform(mid_vec)
-
-plt.figure(figsize=(10,8))
-
-plt.scatter(points_2d[:,0], points_2d[:,1], alpha=0.5)
-
-plt.title("Chat Semantic Space")
-
-plt.xlabel("Component 1")
-plt.ylabel("Component 2")
-
-plt.grid(True)
-
-plt.show()
+ final_risk_score   risk_bucket  anomaly_score  cluster_id  cluster_size  cluster_rarity_score  distance_to_center                                                                                                                                                                                                                                                                                                                                                                                                             chat_phrases
+         0.716040     high_risk       0.449141           1             3              0.250000            0.049861                                                                                                                                                                                                                                                         smaller_than expected smaller_than expected order_a size larger my_son seemed to snag them pretty easy not_sure if that s the shirt or my_son s fault nice value
+         0.662405     high_risk       0.443530           2            37              0.026316            0.128823                                                                                                                                                                                                                                                                                                            a_little small fit my wife perfect but was small on_me i do have a big head ha ha yes i see the humor in that
+         0.651653     high_risk       0.451516           5            12              0.076923            0.052492                                                                                                                                                                                                                                                                            necklace was as expected cute no dislikes really_liked a_little necklace i_think it be perfect_for_my granddaughter for christmas very pretty
+         0.627000     high_risk       0.440160           1             3              0.250000            0.044115                                                                                                                                                                                                                                      husbands necklace bought this for my_husband he likes it said he wish it_was just a inch bugger says its a_little short but he is wearing it and likes it seems_to be doing the job
+         0.614469     high_risk       0.441966           1             3              0.250000            0.023921                                                                                                                                                          great for little kids these_are a_little big on_my 3 year_old but he will grow into them quickly shatter proof however he still snapped the arm off but that s because he s 3 and not the fault of the manufacture going_to order more when he s a_little older
+         0.595191     high_risk       0.443991           2            37              0.026316            0.078764                                                                                                                                                                                                                                                                                  nice_little beanie to_keep little head warm perfect first little beanie they_are soft don_t fit too tight and haven t faded when washed
+         0.592659        review       0.451809           2            37              0.026316            0.027623                                                                                                                                                                                                                 not typical hoodie more style this is more a designer hoodie i_would need_to order 2 sizes bigger to fit into one because_it's not a normal hoodie it's soft but again very slim and not stretchy at_all
+         0.588906        review       0.452000           0            59              0.016667            0.027289                                                                        good fit and protection these for me well and have good protection from thorns they have a_bit of stretch to them and are padded for extra protection and comfort they protect my hands when working or gardening i_like the pink color i wish they_were comparable with_a smartphone so i_could change my music or answer my_phone while working
+         0.582444        review       0.427833           4             1              0.500000            0.000000                                                                                                                                                                                          first bought a_size large and it seemed more like an_extra large i first bought a_size large and it seemed more like an_extra large i_got the medium expecting it to_be like the large and it_was but it_was a_little too small
+         0.574821        review       0.445586           5            12              0.076923            0.036044                                                                                                                            vanilla cream heather grey this sweater is not vanilla cream as advertised it_s a light heather grey the sweatshirt is very_comfortable and fits_true to size i_ordered a medium my usual size it_s more a fitted sweatshirt it_s not baggy well_made and soft color is completely misleading
+         0.569969        review       0.450233           0            59              0.016667            0.025162                                                                                                                                                                                                                                                                                                       pom socks am giving these as a present so i_really don't know about the accuracy of the fit but they sure are_cute
+         0.568833        review       0.431875           0            59              0.016667            0.140281                                          comfortable but not compression i_really like these tank tops mostly to_go under other shirts but i couldn t wear for working_out i_bought them because_they say compression but they_are definitely not compression although they_are fitted and stretch even though they didn t do exactly what i_bought them for i still like them and would_recommend them for general wear
+         0.568131        review       0.450610           2            37              0.026316            0.017990                                                                                                      love it buttt i_have a mixed opinion on this product i_love how it looks buuut i believe it has_a bad type of metal in it it leaves a hard red mark on_my nose if i wear it for too long i can wear it for a_little while though and it gives a pretty great effect it is a_little big thick for a nose ring though
+         0.560920        review       0.443699           5            12              0.076923            0.038213                                                                                                                                                                                                                                                                   beautiful hat this cowboy hat is a beautiful color it_was a_little big and the tie inside helped a_little it worked perfect on_my friend it_s not hers
+         0.554856        review       0.448232           0            59              0.016667            0.027198 these run small i_ordered what i_thought was large enough for my_husband but they_fit me perfectly i usually wear a_size 9 5 in men's i_ordered these in a_size 11 be aware of that when you are ordering also they sent insoles to_go in the shoes putting them in makes the shoe slide off of my foot as there_is really no room for the insoles i just wear them casually around home sans insoles and they work fine
+         0.553711        review       0.437750           0            59              0.016667            0.092580                                                                                                                                                                                                                                                       nice i_got these pants in black i_like the back elastic waist they_fit fine the material_is thin and wrinkles they_are comfortable and are perfect_for casual days
+         0.545990        review       0.442076           0            59              0.016667            0.059848                                                                                                                                                                                                                                                    could_be softer these pairs of underwear fit well and the designs are_cute i_think they could_be a_bit softer though my little boy thinks they_are plenty comfortable
+         0.544579        review       0.441071           0            59              0.016667            0.065207                                                                                                   cute i normally wear an xl in tops 40d so i_got this one in an xl it fit a_little more snug than i_would have liked but still not_too snug to wear hopefully it didn't shrink after i washed it or hopefully i shrink before i wear it next year all in all it's a very_cute top and i_like the colors would buy again
+         0.543309        review       0.435187           0            59              0.016667            0.101468                                                                                                                           feels good but too_big the listing said the fit is smaller_than usual so order_a size larger so i did i should have ordered a_size smaller because_they fit larger than_expected they feel good though and despite the larger fit they don't bunch up under my clothes or become uncomfortable
+         0.537279        review       0.443047           5            12              0.076923            0.025750                                                                                                                                                          masculine beautiful heavy weight men s bracelet it has_a strong clasp and looks good on_my husbands wrist i_like how thick it is very masculine the length is perfect_for him and it is just a tad larger than his wrist comfortable but not to big to fall off
+         0.535071        review       0.443802           5            12              0.076923            0.019430                                                                                                                                        great sweatshirt odd pocket videoid c44d9e0d229a2f672050aa350bd374df i_really love this sweatshirt the pocket is a_little unexpectedly odd however since it opens from on top instead of the sides see video to explain otherwise it looks great and is comfortable and fits_well
+         0.529134        review       0.442277           5            12              0.076923            0.024897                                                                                                                 very nice exceptionally pretty the long sleeves are nice i_like the neckline and the fabric_is as smooth and velvety as a puppy's ears the sizing is a_bit tricky i_bought a small for my mom who size 12 but it_was snug for a robe i_am size 8 and_it_fits me perfectly so consider ordering a_size up
+         0.527280        review       0.445101           2            37              0.026316            0.024122                                                                                                                                                womens heart pullover sweater i_got this for my daughter who is a teenager and she really_liked it it is really cute and the heart is so cute it does fit true_to size but beware that ours did shrink in the dryer so maybe lay flat to dry still very wearable and warm
+         0.522016 likely_normal       0.444018           0            59              0.016667            0.030774                                                                                                                                                                                                 nice_little oomph for shaping i used to buy kathleen kirkwood shoulder pads but sadly discovered she passed away i wanted a small thin shoulder pad to give my clothes a better look and these shoulder pads did the job
+         0.519243 likely_normal       0.445692           2            37              0.026316            0.014754                                                                                                    i_love the bag i received it last friday its not a leather though its a denim bag but the quality is good its perfect_for_my daily use at my internship it can carry my_phone face powder hand sanitizer hand lotion it has pocket inside for my cards and money space for my small power bank and other small things
+         0.516453 likely_normal       0.443577           0            59              0.016667            0.029654                                                            sloppy work but replaced it the printed design on this shirt_is crooked off center looks wears terrible update it's a simple design but i guess it can easily be printed off center the replaced the bad t shirt with_a much better well centered shirt it's nice to see a company do right by their customer i_would recommend_them purchase from them again
+         0.515049 likely_normal       0.444152           2            37              0.026316            0.021538                                                                                                                                                                                                               nice pendant it came with_a clasp and toggle had_to take the toggle off to_put the pendant on had_to remove the clasp before i_could give it as a_gift thankful i had the tools to do it with nice pendant
+         0.512384 likely_normal       0.439072           2            37              0.026316            0.051742                                                                                                                                                                                                                                                                                   so cute i_bought this for my_son who is having a rough time right now it's a nice_little trinket to_keep in his pocket for inspiration
+         0.510975 likely_normal       0.431243           0            59              0.016667            0.103689                                                                                                                                                                                                                                           love these bags color and size are excellent however these_are slightly flimsy and a_bit too expensive for what they_are haven t used them enough to determine their longevity
+         0.508501 likely_normal       0.438306           0            59              0.016667            0.057356                                                                                                                                                                                            cut glare these glasses help with night driving they genuinely cut the glare they_fit easily over my prescription lenses and are comfortable on they_are lightweight they come with_a cloth carrying pouch and cleaning cloth
