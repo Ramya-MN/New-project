@@ -1,249 +1,162 @@
-import numpy as np
+"""
+STEP 1 — LOAD AND PREPARE CHAT DATASET
+-------------------------------------
+
+Goal:
+- Load CSV
+- Validate structure
+- Clean text
+- Prepare dataset for feature engineering
+
+Output:
+- Clean dataframe
+- Ready for next step
+"""
+
+# =========================
+# IMPORT LIBRARIES
+# =========================
+
 import pandas as pd
-import matplotlib.pyplot as plt
+import numpy as np
+import re
 
-from sklearn.ensemble import IsolationForest
-from sklearn.cluster import AgglomerativeClustering
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics.pairwise import cosine_distances
-from sklearn.decomposition import TruncatedSVD
-from scipy.spatial.distance import mahalanobis
+# =========================
+# CONFIGURATION
+# =========================
 
-# ============================================================
-# 1 CONFIG
-# ============================================================
+# Replace with your file path
+FILE_PATH = "chat_data.csv"
 
-csv_path = "3spy_with_sif_embeddings_filtered.csv"
-embeddings_path = "sif_pc_removed_embeddings.npy"
+# =========================
+# LOAD DATASET
+# =========================
 
-text_column = "chat_phrases"
-output_csv = "chat_risk_ranking_final.csv"
+print("Loading dataset...")
 
-contamination = 0.10
-random_state = 42
+df = pd.read_csv(FILE_PATH)
+
+print("Dataset loaded successfully.")
+print()
+
+# =========================
+# BASIC DATA CHECKS
+# =========================
+
+print("Dataset Shape:")
+print(df.shape)
+print()
+
+print("Columns:")
+print(df.columns)
+print()
+
+print("First 5 rows:")
+print(df.head())
+print()
+
+# =========================
+# VALIDATE REQUIRED COLUMNS
+# =========================
+
+required_columns = ["chat_id", "full_chat_text"]
+
+for col in required_columns:
+    if col not in df.columns:
+        raise ValueError(f"Missing required column: {col}")
+
+print("Required columns validated.")
+print()
+
+# =========================
+# HANDLE MISSING TEXT
+# =========================
+
+print("Checking missing values...")
+
+missing_count = df["full_chat_text"].isnull().sum()
+
+print("Missing chat text count:", missing_count)
+
+df["full_chat_text"] = df["full_chat_text"].fillna("")
+
+print("Missing values handled.")
+print()
+
+# =========================
+# TEXT CLEANING FUNCTION
+# =========================
+
+def clean_text(text):
+    """
+    Basic text normalization.
+
+    Steps:
+    - Lowercase
+    - Remove extra spaces
+    - Remove special characters
+    """
+
+    text = str(text)
+
+    # lowercase
+    text = text.lower()
+
+    # remove special characters
+    text = re.sub(r"[^a-zA-Z0-9\s]", " ", text)
+
+    # remove extra spaces
+    text = re.sub(r"\s+", " ", text)
+
+    return text.strip()
 
 
-# ============================================================
-# 2 LOAD DATA
-# ============================================================
+# =========================
+# APPLY CLEANING
+# =========================
 
-df = pd.read_csv(csv_path)
-X_raw = np.load(embeddings_path)
+print("Cleaning text...")
 
-assert len(df) == len(X_raw)
+df["clean_chat_text"] = df["full_chat_text"].apply(clean_text)
 
-print("DATA SHAPE:", df.shape)
-print("EMBEDDING SHAPE:", X_raw.shape)
+print("Text cleaning completed.")
+print()
 
+# =========================
+# BASIC STATISTICS
+# =========================
 
-# ============================================================
-# 3 SVD SEMANTIC COMPRESSION
-# ============================================================
+df["num_characters"] = df["clean_chat_text"].apply(len)
 
-print("\nRunning SVD...")
-
-svd = TruncatedSVD(n_components=100, random_state=42)
-X = svd.fit_transform(X_raw)
-
-print("Explained variance:", svd.explained_variance_ratio_.sum())
-
-
-# ============================================================
-# 4 ISOLATION FOREST
-# ============================================================
-
-print("\nRunning Isolation Forest")
-
-iso = IsolationForest(
-    contamination=contamination,
-    random_state=random_state,
-    n_estimators=300
+df["num_words"] = df["clean_chat_text"].apply(
+    lambda x: len(x.split())
 )
 
-iso.fit(X)
+print("Basic statistics calculated.")
+print()
 
-df["anomaly_score"] = -iso.score_samples(X)
-
-
-# ============================================================
-# 5 CLUSTERING
-# ============================================================
-
-print("\nRunning Agglomerative Clustering")
-
-cluster_model = AgglomerativeClustering(
-    metric="cosine",
-    linkage="complete",
-    distance_threshold=0.35,
-    n_clusters=None
+print("Sample cleaned data:")
+print(
+    df[
+        [
+            "chat_id",
+            "clean_chat_text",
+            "num_words"
+        ]
+    ].head()
 )
 
-df["cluster_id"] = cluster_model.fit_predict(X)
+# =========================
+# SAVE CLEANED DATA
+# =========================
 
-print("Clusters:", df["cluster_id"].nunique())
+OUTPUT_FILE = "cleaned_chat_data.csv"
 
-cluster_sizes = df["cluster_id"].value_counts().to_dict()
-df["cluster_size"] = df["cluster_id"].map(cluster_sizes)
-
-
-# ============================================================
-# 6 DISTANCE TO CLUSTER CENTROID
-# ============================================================
-
-print("\nComputing centroid distances")
-
-centroids = {}
-
-for cid in df["cluster_id"].unique():
-    idx = df.index[df["cluster_id"] == cid]
-    centroids[cid] = X[idx].mean(axis=0)
-
-distances = []
-
-for i in range(len(df)):
-    cid = df.loc[i, "cluster_id"]
-    c = centroids[cid].reshape(1, -1)
-
-    d = cosine_distances(
-        X[i].reshape(1, -1),
-        c
-    )[0][0]
-
-    distances.append(d)
-
-df["distance_to_center"] = distances
-
-
-# ============================================================
-# 7 MAHALANOBIS DISTANCE
-# ============================================================
-
-print("\nComputing Mahalanobis distance")
-
-cov = np.cov(X, rowvar=False)
-cov_inv = np.linalg.pinv(cov)
-
-mean_vec = np.mean(X, axis=0)
-
-mahal_dist = []
-
-for row in X:
-    d = mahalanobis(row, mean_vec, cov_inv)
-    mahal_dist.append(d)
-
-df["mahalanobis_distance"] = mahal_dist
-
-
-# ============================================================
-# 8 NORMALIZATION
-# ============================================================
-
-print("\nNormalizing scores")
-
-score_cols = [
-    "anomaly_score",
-    "distance_to_center",
-    "mahalanobis_distance"
-]
-
-scaler = MinMaxScaler()
-
-scaled = scaler.fit_transform(df[score_cols])
-
-df["anomaly_scaled"] = scaled[:,0]
-df["distance_scaled"] = scaled[:,1]
-df["mahal_scaled"] = scaled[:,2]
-
-
-# ============================================================
-# 9 FINAL RISK SCORE
-# ============================================================
-
-print("\nCalculating final risk score")
-
-df["final_risk_score"] = (
-
-    0.5 * df["anomaly_scaled"] +
-
-    0.3 * df["distance_scaled"] +
-
-    0.2 * df["mahal_scaled"]
-
+df.to_csv(
+    OUTPUT_FILE,
+    index=False
 )
 
-
-# ============================================================
-# 10 RISK BUCKETS
-# ============================================================
-
-high_cut = df["final_risk_score"].quantile(0.95)
-review_cut = df["final_risk_score"].quantile(0.80)
-
-df["risk_bucket"] = "likely_normal"
-
-df.loc[df["final_risk_score"] >= review_cut, "risk_bucket"] = "review"
-df.loc[df["final_risk_score"] >= high_cut, "risk_bucket"] = "high_risk"
-
-
-print(df["risk_bucket"].value_counts())
-
-
-# ============================================================
-# 11 SAVE RESULTS
-# ============================================================
-
-df_sorted = df.sort_values(
-    "final_risk_score",
-    ascending=False
-)
-
-df_sorted.to_csv(output_csv, index=False)
-
-print("\nSaved:", output_csv)
-
-
-# ============================================================
-# 12 VISUALIZATION
-# ============================================================
-
-print("\nGenerating graphs")
-
-# Risk distribution
-plt.figure()
-
-plt.hist(df["final_risk_score"], bins=25)
-
-plt.title("Risk Score Distribution")
-plt.xlabel("Risk Score")
-plt.ylabel("Count")
-
-plt.show()
-
-
-# anomaly vs mahalanobis
-plt.figure()
-
-plt.scatter(
-    df["anomaly_scaled"],
-    df["mahal_scaled"]
-)
-
-plt.xlabel("Isolation Forest Score")
-plt.ylabel("Mahalanobis Distance")
-
-plt.title("Anomaly vs Statistical Outlier")
-
-plt.show()
-
-
-# cluster size distribution
-plt.figure()
-
-df["cluster_size"].value_counts().sort_index().plot(kind="bar")
-
-plt.title("Cluster Size Distribution")
-
-plt.xlabel("Cluster Size")
-plt.ylabel("Frequency")
-
-plt.show()
+print()
+print("Cleaned dataset saved as:")
+print(OUTPUT_FILE)
