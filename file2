@@ -1,162 +1,152 @@
 """
-STEP 1 — LOAD AND PREPARE CHAT DATASET
--------------------------------------
-
-Goal:
-- Load CSV
-- Validate structure
-- Clean text
-- Prepare dataset for feature engineering
-
-Output:
-- Clean dataframe
-- Ready for next step
+STEP 2 — BUILD CORE LINGUISTIC FEATURES
+---------------------------------------
+Creates interpretable features from chat text
 """
 
-# =========================
-# IMPORT LIBRARIES
-# =========================
-
 import pandas as pd
-import numpy as np
 import re
+import numpy as np
 
-# =========================
-# CONFIGURATION
-# =========================
+# ======================
+# LOAD CLEANED DATA
+# ======================
 
-# Replace with your file path
-FILE_PATH = "chat_data.csv"
+df = pd.read_csv("step1_cleaned_data.csv")
 
-# =========================
-# LOAD DATASET
-# =========================
+print("Data loaded")
+print("Rows:", len(df))
 
-print("Loading dataset...")
+# ======================
+# TOKENIZATION
+# ======================
 
-df = pd.read_csv(FILE_PATH)
+def tokenize(text):
 
-print("Dataset loaded successfully.")
-print()
+    words = text.split()
 
-# =========================
-# BASIC DATA CHECKS
-# =========================
+    return words
 
-print("Dataset Shape:")
-print(df.shape)
-print()
+# ======================
+# FEATURE FUNCTIONS
+# ======================
 
-print("Columns:")
-print(df.columns)
-print()
+def average_word_length(words):
 
-print("First 5 rows:")
-print(df.head())
-print()
+    if len(words) == 0:
+        return 0
 
-# =========================
-# VALIDATE REQUIRED COLUMNS
-# =========================
-
-required_columns = ["chat_id", "full_chat_text"]
-
-for col in required_columns:
-    if col not in df.columns:
-        raise ValueError(f"Missing required column: {col}")
-
-print("Required columns validated.")
-print()
-
-# =========================
-# HANDLE MISSING TEXT
-# =========================
-
-print("Checking missing values...")
-
-missing_count = df["full_chat_text"].isnull().sum()
-
-print("Missing chat text count:", missing_count)
-
-df["full_chat_text"] = df["full_chat_text"].fillna("")
-
-print("Missing values handled.")
-print()
-
-# =========================
-# TEXT CLEANING FUNCTION
-# =========================
-
-def clean_text(text):
-    """
-    Basic text normalization.
-
-    Steps:
-    - Lowercase
-    - Remove extra spaces
-    - Remove special characters
-    """
-
-    text = str(text)
-
-    # lowercase
-    text = text.lower()
-
-    # remove special characters
-    text = re.sub(r"[^a-zA-Z0-9\s]", " ", text)
-
-    # remove extra spaces
-    text = re.sub(r"\s+", " ", text)
-
-    return text.strip()
+    return np.mean([len(w) for w in words])
 
 
-# =========================
-# APPLY CLEANING
-# =========================
+def unique_word_ratio(words):
 
-print("Cleaning text...")
+    if len(words) == 0:
+        return 0
 
-df["clean_chat_text"] = df["full_chat_text"].apply(clean_text)
+    return len(set(words)) / len(words)
 
-print("Text cleaning completed.")
-print()
 
-# =========================
-# BASIC STATISTICS
-# =========================
+def repeated_word_ratio(words):
 
-df["num_characters"] = df["clean_chat_text"].apply(len)
+    if len(words) == 0:
+        return 0
 
-df["num_words"] = df["clean_chat_text"].apply(
-    lambda x: len(x.split())
+    repeated = len(words) - len(set(words))
+
+    return repeated / len(words)
+
+
+def uppercase_ratio(text):
+
+    if len(text) == 0:
+        return 0
+
+    upper = sum(1 for c in text if c.isupper())
+
+    return upper / len(text)
+
+
+def punctuation_count(text):
+
+    return len(
+        re.findall(r"[^\w\s]", text)
+    )
+
+
+def question_count(text):
+
+    return text.count("?")
+
+
+def exclamation_count(text):
+
+    return text.count("!")
+
+# ======================
+# APPLY FEATURES
+# ======================
+
+print("Creating linguistic features...")
+
+df["tokens"] = df["clean_chat_text"].apply(tokenize)
+
+df["avg_word_length"] = df["tokens"].apply(
+    average_word_length
 )
 
-print("Basic statistics calculated.")
-print()
+df["unique_word_ratio"] = df["tokens"].apply(
+    unique_word_ratio
+)
 
-print("Sample cleaned data:")
+df["repeated_word_ratio"] = df["tokens"].apply(
+    repeated_word_ratio
+)
+
+df["uppercase_ratio"] = df["chat"].apply(
+    uppercase_ratio
+)
+
+df["punctuation_count"] = df["chat"].apply(
+    punctuation_count
+)
+
+df["question_count"] = df["chat"].apply(
+    question_count
+)
+
+df["exclamation_count"] = df["chat"].apply(
+    exclamation_count
+)
+
+print("Features created")
+
+# ======================
+# QUICK CHECK
+# ======================
+
+print("\nSample features:")
+
 print(
     df[
         [
-            "chat_id",
             "clean_chat_text",
-            "num_words"
+            "avg_word_length",
+            "unique_word_ratio",
+            "uppercase_ratio",
+            "question_count",
+            "exclamation_count"
         ]
     ].head()
 )
 
-# =========================
-# SAVE CLEANED DATA
-# =========================
-
-OUTPUT_FILE = "cleaned_chat_data.csv"
+# ======================
+# SAVE DATA
+# ======================
 
 df.to_csv(
-    OUTPUT_FILE,
+    "step2_linguistic_features.csv",
     index=False
 )
 
-print()
-print("Cleaned dataset saved as:")
-print(OUTPUT_FILE)
+print("\nSaved: step2_linguistic_features.csv")
