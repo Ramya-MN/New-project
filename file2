@@ -1,82 +1,132 @@
 # ==============================
-# STEP 5 — SENTIMENT FEATURES
+# STEP 6 — TOPIC FEATURES
 # ==============================
 
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-
-# Initialize analyzer
-analyzer = SentimentIntensityAnalyzer()
-
-# ------------------------------
-# Helper function
-# ------------------------------
-
-def get_sentiment_scores(text):
-    scores = analyzer.polarity_scores(text)
-
-    return pd.Series([
-        scores["pos"],
-        scores["neu"],
-        scores["neg"],
-        scores["compound"]
-    ])
-
+from gensim import corpora
+from gensim.models import LdaModel
+import numpy as np
 
 # ------------------------------
-# Create sentiment features
+# 1. Tokenize chats
 # ------------------------------
 
-df[
-    [
-        "sentiment_positive",
-        "sentiment_neutral",
-        "sentiment_negative",
-        "sentiment_compound"
+df["tokens"] = df["clean_chat"].apply(lambda x: x.split())
+
+# ------------------------------
+# 2. Create dictionary
+# ------------------------------
+
+dictionary = corpora.Dictionary(df["tokens"])
+
+# Filter rare words
+dictionary.filter_extremes(
+    no_below=5,
+    no_above=0.8
+)
+
+# ------------------------------
+# 3. Create corpus
+# ------------------------------
+
+corpus = [
+    dictionary.doc2bow(tokens)
+    for tokens in df["tokens"]
+]
+
+# ------------------------------
+# 4. Train topic model
+# ------------------------------
+
+NUM_TOPICS = 5
+
+lda_model = LdaModel(
+    corpus=corpus,
+    id2word=dictionary,
+    num_topics=NUM_TOPICS,
+    passes=10,
+    random_state=42
+)
+
+print("Topic model trained")
+
+# ------------------------------
+# 5. Extract topic probabilities
+# ------------------------------
+
+def get_topic_distribution(bow):
+
+    topic_probs = lda_model.get_document_topics(
+        bow,
+        minimum_probability=0
+    )
+
+    probs = [prob for _, prob in topic_probs]
+
+    return probs
+
+
+topic_matrix = [
+    get_topic_distribution(bow)
+    for bow in corpus
+]
+
+topic_df = pd.DataFrame(
+    topic_matrix,
+    columns=[
+        f"topic_{i}"
+        for i in range(NUM_TOPICS)
     ]
-] = df["clean_chat"].apply(get_sentiment_scores)
+)
 
+# Merge with main dataset
+df = pd.concat(
+    [df, topic_df],
+    axis=1
+)
 
 # ------------------------------
-# Preview results
+# 6. Topic entropy
 # ------------------------------
 
-print("\nSentiment features created successfully")
+def topic_entropy(row):
+
+    probs = row.values
+
+    return -np.sum(
+        probs * np.log(probs + 1e-10)
+    )
+
+
+df["topic_entropy"] = topic_df.apply(
+    topic_entropy,
+    axis=1
+)
+
+# ------------------------------
+# Preview
+# ------------------------------
+
+print("\nTopic features created")
 
 print(
     df[
         [
-            "clean_chat",
-            "sentiment_positive",
-            "sentiment_neutral",
-            "sentiment_negative",
-            "sentiment_compound"
+            "topic_0",
+            "topic_1",
+            "topic_2",
+            "topic_3",
+            "topic_4",
+            "topic_entropy",
         ]
     ].head()
 )
 
+output_file = "chat_features_step6_topics.csv"
 
-# ------------------------------
-# Feature summary
-# ------------------------------
-
-print("\nFeature summary:")
-
-print(
-    df[
-        [
-            "sentiment_positive",
-            "sentiment_neutral",
-            "sentiment_negative",
-            "sentiment_compound"
-        ]
-    ].describe()
+df.to_csv(
+    output_file,
+    index=False
 )
 
-# Save dataset after Step 5
-
-output_file = "chat_features_step5_sentiment.csv"
-
-df.to_csv(output_file, index=False)
-
-print("Step 5 dataset saved")
+print("Step 6 dataset saved")
 print("Dataset shape:", df.shape)
