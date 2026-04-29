@@ -1,86 +1,79 @@
 # ==============================
-# STEP 10 — LOCAL OUTLIER FACTOR
+# STEP 11 — SCORE FUSION
 # ==============================
 
-from sklearn.neighbors import LocalOutlierFactor
 import numpy as np
+from sklearn.preprocessing import MinMaxScaler
 
-print("Starting Step 10 — Local Outlier Factor")
-
-# ------------------------------
-# 1. Use numeric features only
-# ------------------------------
-
-feature_columns = scaled_df.select_dtypes(
-    include=[np.number]
-).columns
-
-# Remove Isolation Forest outputs if present
-
-feature_columns = [
-    col for col in feature_columns
-    if col not in [
-        "isolation_score"
-    ]
-]
-
-X = scaled_df[feature_columns]
-
-print("Numeric features used:", len(feature_columns))
-print("Feature matrix shape:", X.shape)
+print("Starting Step 11 — Score Fusion")
 
 # ------------------------------
-# 2. Train LOF
+# 1. Normalize scores to same scale
 # ------------------------------
 
-lof_model = LocalOutlierFactor(
+scaler = MinMaxScaler()
 
-    n_neighbors=20,
-    contamination=0.05
+scaled_df["iso_score_norm"] = scaler.fit_transform(
+    scaled_df[["isolation_score"]]
+)
+
+scaled_df["lof_score_norm"] = scaler.fit_transform(
+    scaled_df[["lof_score"]]
+)
+
+print("Scores normalized")
+
+# ------------------------------
+# 2. Create final risk score
+# ------------------------------
+
+scaled_df["final_risk_score"] = (
+
+    scaled_df["iso_score_norm"] +
+    scaled_df["lof_score_norm"]
+
+) / 2
+
+print("Final risk score created")
+
+# ------------------------------
+# 3. Create final risk label
+# ------------------------------
+
+threshold = 0.95
+
+scaled_df["final_risk_label"] = np.where(
+
+    scaled_df["final_risk_score"] >= threshold,
+
+    "High Risk",
+
+    "Normal"
 
 )
 
-# Fit and predict
-
-lof_labels = lof_model.fit_predict(X)
-
-print("LOF model trained")
+print("Final risk label assigned")
 
 # ------------------------------
-# 3. Store results
-# ------------------------------
-
-scaled_df["lof_label"] = [
-
-    "Normal" if label == 1 else "Anomaly"
-
-    for label in lof_labels
-]
-
-# LOF score
-
-scaled_df["lof_score"] = lof_model.negative_outlier_factor_
-
-print("LOF scores generated")
-
-# ------------------------------
-# 4. Show results
+# 4. Show sample
 # ------------------------------
 
 print(
     scaled_df[
         [
+            "isolation_score",
             "lof_score",
-            "lof_label"
+            "final_risk_score",
+            "final_risk_label"
         ]
     ].head()
 )
 
-output_file = "chat_features_step10_lof.csv"
+output_file = "chat_features_step11_final_scores.csv"
 
 scaled_df.to_csv(
     output_file,
     index=False
 )
 
-print("Step 10 dataset saved")
+print("Step 11 dataset saved")
