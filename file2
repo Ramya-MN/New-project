@@ -1,61 +1,62 @@
 # ==============================
-# STEP 1 — LOAD DATA
+# STEP 2 — PREPROCESSING
 # ==============================
 
-# Import required libraries
-import pandas as pd
+import re
 
 # ------------------------------
-# 1. Define file path
+# 1. Keep original chat safe
 # ------------------------------
-# Replace with your actual file path
-file_path = "chat_data.csv"
+df['original_chat'] = df['chat']
 
 # ------------------------------
-# 2. Load CSV file
+# 2. Handle missing chats
 # ------------------------------
-try:
-    df = pd.read_csv(file_path)
-    print("✅ Data loaded successfully")
+df['chat'] = df['chat'].fillna("")
 
-except FileNotFoundError:
-    print("❌ File not found. Check file path.")
-
-except Exception as e:
-    print("❌ Error loading file:", e)
+print("Missing chats handled")
 
 # ------------------------------
-# 3. View first few rows
+# 3. Define cleaning function
 # ------------------------------
-print("\nFirst 5 rows of data:")
-print(df.head())
+def clean_text(text):
+    """
+    Clean chat text for analysis.
+    """
+
+    # Convert to string
+    text = str(text)
+
+    # Lowercase
+    text = text.lower()
+
+    # Remove special characters
+    text = re.sub(r'[^a-zA-Z0-9\s]', ' ', text)
+
+    # Remove extra spaces
+    text = re.sub(r'\s+', ' ', text)
+
+    # Strip spaces
+    text = text.strip()
+
+    return text
+
 
 # ------------------------------
-# 4. Check dataset shape
+# 4. Apply cleaning
 # ------------------------------
-print("\nDataset shape (rows, columns):")
+df['clean_chat'] = df['chat'].apply(clean_text)
+
+print("Text cleaning completed")
+
+# ------------------------------
+# 5. Preview results
+# ------------------------------
+print("\nOriginal vs Cleaned:")
+print(df[['original_chat', 'clean_chat']].head())
+
+# ------------------------------
+# 6. Verify dataset
+# ------------------------------
+print("\nDataset shape:")
 print(df.shape)
-
-# ------------------------------
-# 5. View column names
-# ------------------------------
-print("\nColumn names:")
-print(df.columns.tolist())
-
-# ------------------------------
-# 6. Check missing values
-# ------------------------------
-print("\nMissing values per column:")
-print(df.isnull().sum())
-
-# ------------------------------
-# 7. Check data types
-# ------------------------------
-print("\nData types:")
-print(df.dtypes)
-
-# ------------------------------
-# 8. Basic statistics
-# ------------------------------
-print("\nBasic dataset info:")
-df.info()
