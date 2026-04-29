@@ -1,14 +1,37 @@
-def get_topic_distribution(bow):
+Topic model trained
 
-    # If document has no words
-    if len(bow) == 0:
-        return [0.0] * NUM_TOPICS
+Topic features created
+    topic_0   topic_1   topic_2   topic_3   topic_4  topic_entropy
+0  0.000113  0.000113  0.000113  0.000113  0.999548       0.004556
+1  0.201045  0.586395  0.113810  0.000244  0.098506       1.113180
+2  0.000169  0.000169  0.999324  0.000170  0.000168       0.006547
+3  0.000113  0.000113  0.000113  0.000113  0.999548       0.004556
+4  0.062660  0.000103  0.000103  0.000104  0.937030       0.237358
+Step 6 dataset saved
+Dataset shape: (75, 55)
 
-    topic_probs = lda_model.get_document_topics(
-        bow,
-        minimum_probability=0
-    )
 
-    probs = [prob for _, prob in topic_probs]
+Topic model trained
 
-    return probs
+Topic features created
+    topic_0   topic_0   topic_1   topic_1   topic_2   topic_2   topic_3  \
+0  0.000113  0.000104  0.000113  0.000104  0.000113  0.000104  0.000113   
+1  0.201045  0.988521  0.586395  0.000183  0.113810  0.000182  0.000244   
+2  0.000169  0.000133  0.000169  0.999469  0.999324  0.000133  0.000170   
+3  0.000113  0.000104  0.000113  0.000104  0.000113  0.000104  0.000113   
+4  0.062660  0.000090  0.000103  0.019487  0.000103  0.000091  0.000104   
+
+    topic_3   topic_4   topic_4  topic_entropy  
+0  0.999583  0.999548  0.000104       0.004241  
+1  0.007960  0.098506  0.003154       0.071189  
+2  0.000132  0.000168  0.000133       0.005272  
+3  0.999583  0.999548  0.000104       0.004241  
+4  0.980241  0.937030  0.000091       0.098839  
+Step 6 dataset saved
+Dataset shape: (75, 60)
+
+
+
+
+
+
