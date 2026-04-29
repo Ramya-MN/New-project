@@ -1,52 +1,107 @@
-Starting Step 8 — Feature Scaling
-Numeric columns count: 25
-Features used for scaling: 25
+if "Unnamed: 0" in scaled_df.columns:
 
-Scaled feature sample:
-   Unnamed: 0  duration_days  duration_hours  duration_minutes  \
-0   -1.692497            0.0       -0.644532         -0.644532   
-1   -1.664737            0.0        0.230508          0.230508   
-2   -1.662641            0.0        0.608498          0.608498   
-3   -1.613406            0.0        1.214205          1.214205   
-4   -1.608692            0.0       -0.137161         -0.137161   
+    scaled_df = scaled_df.drop(
+        columns=["Unnamed: 0"]
+    )
 
-   num_characters  num_words  word_count  unique_word_count  \
-0       -0.404521  -0.387487   -0.210406           0.053715   
-1       -0.151513  -0.184137   -0.371835          -0.289821   
-2       -0.306144  -0.336860   -0.277047          -0.399971   
-3       -0.361062  -0.348673   -0.210406           0.053715   
-4       -0.339528  -0.326641   -0.135702           0.144234   
+    
+print("Dropped Unnamed: 0 column")
 
-   unique_word_ratio  avg_word_length  ...  short_sentence_ratio  \
-0          -0.034302         0.156966  ...             -0.499750   
-1           0.347680        -1.601814  ...             -0.818822   
-2          -0.873024         2.293463  ...             -0.761125   
-3          -0.034302         0.156966  ...             -0.499750   
-4          -0.260494         0.594671  ...             -0.737505   
 
-   long_sentence_ratio  punctuation_count  sentiment_positive  \
-0            -0.112074          -0.211066            0.031212   
-1            -1.149274          -0.304167           -0.671056   
-2             0.489936          -0.259765           -0.483785   
-3            -0.112074          -0.211066            0.031212   
-4             0.410630          -0.179555            0.148257   
+# ==============================
+# STEP 9 — ISOLATION FOREST
+# ==============================
 
-   sentiment_neutral  sentiment_negative  sentiment_compound  \
-0          -0.254065            0.547430            0.281302   
-1           1.008370           -1.057106            0.276870   
-2           0.712487           -0.726760            0.279363   
-3          -0.254065            0.547430            0.281302   
-4           0.061544           -0.443607            0.282964   
+from sklearn.ensemble import IsolationForest
+import pandas as pd
 
-   room_keyword_encoded  lexicon_theme_encoded  theme_diversity  
-0             -0.894885                    0.0              0.0  
-1             -0.483759                    0.0              0.0  
-2              1.366310                    0.0              0.0  
-3             -0.894885                    0.0              0.0  
-4             -0.894885                    0.0              0.0  
+print("Starting Step 9 — Isolation Forest")
 
-[5 rows x 25 columns]
+# ------------------------------
+# 1. Prepare feature matrix
+# ------------------------------
 
-Scaled dataset shape:
-(75, 25)
-Step 8 dataset saved
+feature_columns = [
+    col for col in scaled_df.columns
+    if col != "chat_id"
+]
+
+X = scaled_df[feature_columns]
+
+print("Feature matrix shape:", X.shape)
+
+# ------------------------------
+# 2. Train Isolation Forest
+# ------------------------------
+
+iso_model = IsolationForest(
+
+    n_estimators=100,
+    contamination=0.05,  # assume 5% anomalies
+    random_state=42
+
+)
+
+iso_model.fit(X)
+
+print("Isolation Forest trained")
+
+# ------------------------------
+# 3. Get anomaly scores
+# ------------------------------
+
+scaled_df["isolation_score"] = iso_model.decision_function(X)
+
+# ------------------------------
+# 4. Get anomaly labels
+# ------------------------------
+
+scaled_df["isolation_label"] = iso_model.predict(X)
+
+# Convert labels:
+
+scaled_df["isolation_label"] = scaled_df[
+    "isolation_label"
+].map({
+    1: "Normal",
+    -1: "Anomaly"
+})
+
+# ------------------------------
+# 5. Preview results
+# ------------------------------
+
+print("\nIsolation results:")
+
+print(
+    scaled_df[
+        [
+            "chat_id",
+            "isolation_score",
+            "isolation_label"
+        ]
+    ].head()
+)
+
+
+
+print(
+
+    scaled_df["isolation_label"]
+
+    .value_counts()
+
+)
+output_file = "chat_features_step9_isolation.csv"
+
+scaled_df.to_csv(
+    output_file,
+    index=False
+)
+
+print("Step 9 dataset saved")
+
+
+
+
+
