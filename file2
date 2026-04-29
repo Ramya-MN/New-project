@@ -1,96 +1,95 @@
 # ==============================
-# STEP 3 — LEXICAL FEATURES
+# STEP 4 — STRUCTURAL FEATURES
 # ==============================
 
-import numpy as np
+import re
 
 # ------------------------------
 # Helper functions
 # ------------------------------
 
-def word_count(text):
-    words = text.split()
-    return len(words)
+def sentence_count(text):
+    sentences = re.split(r'[.!?]+', text)
+    sentences = [s for s in sentences if s.strip() != ""]
+    return len(sentences)
 
 
-def unique_word_count(text):
-    words = text.split()
-    return len(set(words))
+def avg_sentence_length(text):
+    sentences = re.split(r'[.!?]+', text)
+    sentences = [s.strip() for s in sentences if s.strip() != ""]
 
-
-def unique_word_ratio(text):
-    words = text.split()
-
-    if len(words) == 0:
+    if len(sentences) == 0:
         return 0
 
-    return len(set(words)) / len(words)
+    word_counts = [len(s.split()) for s in sentences]
+    return sum(word_counts) / len(sentences)
 
 
-def avg_word_length(text):
-    words = text.split()
+def short_sentence_ratio(text):
+    sentences = re.split(r'[.!?]+', text)
+    sentences = [s.strip() for s in sentences if s.strip() != ""]
 
-    if len(words) == 0:
+    if len(sentences) == 0:
         return 0
 
-    total_length = sum(len(word) for word in words)
-    return total_length / len(words)
+    short_sentences = [s for s in sentences if len(s.split()) <= 3]
+
+    return len(short_sentences) / len(sentences)
 
 
-def uppercase_count(text):
-    return sum(1 for char in text if char.isupper())
+def long_sentence_ratio(text):
+    sentences = re.split(r'[.!?]+', text)
+    sentences = [s.strip() for s in sentences if s.strip() != ""]
+
+    if len(sentences) == 0:
+        return 0
+
+    long_sentences = [s for s in sentences if len(s.split()) >= 15]
+
+    return len(long_sentences) / len(sentences)
 
 
-def exclamation_count(text):
-    return text.count("!")
+def punctuation_count(text):
+    return len(re.findall(r'[.!?,;:]', text))
 
-
-def question_count(text):
-    return text.count("?")
 
 # ------------------------------
-# Create lexical features
+# Create structural features
 # ------------------------------
 
-df["word_count"] = df["clean_chat"].apply(word_count)
+df["sentence_count"] = df["original_chat"].apply(sentence_count)
 
-df["unique_word_count"] = df["clean_chat"].apply(unique_word_count)
+df["avg_sentence_length"] = df["original_chat"].apply(avg_sentence_length)
 
-df["unique_word_ratio"] = df["clean_chat"].apply(unique_word_ratio)
+df["short_sentence_ratio"] = df["original_chat"].apply(short_sentence_ratio)
 
-df["avg_word_length"] = df["clean_chat"].apply(avg_word_length)
+df["long_sentence_ratio"] = df["original_chat"].apply(long_sentence_ratio)
 
-df["uppercase_count"] = df["original_chat"].apply(uppercase_count)
+df["punctuation_count"] = df["original_chat"].apply(punctuation_count)
 
-df["exclamation_count"] = df["original_chat"].apply(exclamation_count)
-
-df["question_count"] = df["original_chat"].apply(question_count)
 
 # ------------------------------
 # Preview results
 # ------------------------------
 
-print("\nLexical features created successfully")
-
-print("\nSample rows:")
+print("\nStructural features created successfully")
 
 print(
     df[
         [
-            "clean_chat",
-            "word_count",
-            "unique_word_count",
-            "unique_word_ratio",
-            "avg_word_length",
-            "uppercase_count",
-            "exclamation_count",
-            "question_count",
+            "original_chat",
+            "sentence_count",
+            "avg_sentence_length",
+            "short_sentence_ratio",
+            "long_sentence_ratio",
+            "punctuation_count",
         ]
     ].head()
 )
 
+
 # ------------------------------
-# Check feature summary
+# Feature summary
 # ------------------------------
 
 print("\nFeature summary:")
@@ -98,27 +97,19 @@ print("\nFeature summary:")
 print(
     df[
         [
-            "word_count",
-            "unique_word_count",
-            "unique_word_ratio",
-            "avg_word_length",
-            "uppercase_count",
-            "exclamation_count",
-            "question_count",
+            "sentence_count",
+            "avg_sentence_length",
+            "short_sentence_ratio",
+            "long_sentence_ratio",
+            "punctuation_count",
         ]
     ].describe()
 )
+# Save dataset after Step 4
 
-# ==============================
-# SAVE DATASET AFTER STEP 3
-# ==============================
+output_file = "chat_features_step4_structural.csv"
 
-# Define output file name
-output_file = "chat_features_step3_lexical.csv"
-
-# Save dataset
 df.to_csv(output_file, index=False)
 
-print("Dataset saved successfully")
-print("File name:", output_file)
+print("Step 4 dataset saved")
 print("Dataset shape:", df.shape)
