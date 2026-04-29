@@ -1,35 +1,61 @@
-merged_df = scaled_df.merge(
+# ==============================
+# CLEAN DATASET FOR PIPELINE START
+# ==============================
 
-    original_df[
-        [
-            "chat_id",
-            "chat_readable"
-        ]
-    ],
+import pandas as pd
 
-    on="chat_id",
-    how="left"
+print("Starting dataset cleanup")
 
-)
+# ------------------------------
+# 1. Keep only required columns
+# ------------------------------
 
-high_risk_chats = merged_df[
+columns_to_keep = [
 
-    merged_df["final_risk_label"]
-    == "High Risk"
+    "original_chat",
+    "lexicon_name",
+    "room_keyword",
+    "alert_rating"
 
 ]
 
-high_risk_chats = high_risk_chats.sort_values(
+clean_df = original_df[columns_to_keep].copy()
 
-    by="final_risk_score",
-    ascending=False
+print("Columns filtered")
+
+# ------------------------------
+# 2. Remove default_text if present
+# ------------------------------
+
+if "default_text" in clean_df.columns:
+
+    clean_df = clean_df.drop(
+        columns=["default_text"]
+    )
+
+    print("default_text removed")
+
+# ------------------------------
+# 3. Add unique integer index
+# ------------------------------
+
+clean_df.insert(
+
+    0,                      # position
+    "chat_index",           # column name
+    range(1, len(clean_df) + 1)
 
 )
 
-high_risk_chats[
-    [
-        "chat_id",
-        "final_risk_score",
-        "chat_readable"
-    ]
-]
+print("Unique index added")
+
+# ------------------------------
+# 4. Verify
+# ------------------------------
+
+print("Dataset shape:")
+print(clean_df.shape)
+
+print("\nSample data:")
+
+print(clean_df.head())
