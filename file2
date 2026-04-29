@@ -1,13 +1,14 @@
-# Check empty token lists
+def get_topic_distribution(bow):
 
-empty_docs = df["tokens"].apply(len) == 0
+    # If document has no words
+    if len(bow) == 0:
+        return [0.0] * NUM_TOPICS
 
-print("Empty token documents:")
-print(empty_docs.sum())
+    topic_probs = lda_model.get_document_topics(
+        bow,
+        minimum_probability=0
+    )
 
-# Check empty BOW vectors
+    probs = [prob for _, prob in topic_probs]
 
-empty_bow = [len(bow) == 0 for bow in corpus]
-
-print("Empty BOW documents:")
-print(sum(empty_bow))
+    return probs
