@@ -1,62 +1,124 @@
 # ==============================
-# STEP 2 — PREPROCESSING
+# STEP 3 — LEXICAL FEATURES
 # ==============================
 
-import re
+import numpy as np
 
 # ------------------------------
-# 1. Keep original chat safe
+# Helper functions
 # ------------------------------
-df['original_chat'] = df['chat']
 
-# ------------------------------
-# 2. Handle missing chats
-# ------------------------------
-df['chat'] = df['chat'].fillna("")
-
-print("Missing chats handled")
-
-# ------------------------------
-# 3. Define cleaning function
-# ------------------------------
-def clean_text(text):
-    """
-    Clean chat text for analysis.
-    """
-
-    # Convert to string
-    text = str(text)
-
-    # Lowercase
-    text = text.lower()
-
-    # Remove special characters
-    text = re.sub(r'[^a-zA-Z0-9\s]', ' ', text)
-
-    # Remove extra spaces
-    text = re.sub(r'\s+', ' ', text)
-
-    # Strip spaces
-    text = text.strip()
-
-    return text
+def word_count(text):
+    words = text.split()
+    return len(words)
 
 
-# ------------------------------
-# 4. Apply cleaning
-# ------------------------------
-df['clean_chat'] = df['chat'].apply(clean_text)
+def unique_word_count(text):
+    words = text.split()
+    return len(set(words))
 
-print("Text cleaning completed")
 
-# ------------------------------
-# 5. Preview results
-# ------------------------------
-print("\nOriginal vs Cleaned:")
-print(df[['original_chat', 'clean_chat']].head())
+def unique_word_ratio(text):
+    words = text.split()
+
+    if len(words) == 0:
+        return 0
+
+    return len(set(words)) / len(words)
+
+
+def avg_word_length(text):
+    words = text.split()
+
+    if len(words) == 0:
+        return 0
+
+    total_length = sum(len(word) for word in words)
+    return total_length / len(words)
+
+
+def uppercase_count(text):
+    return sum(1 for char in text if char.isupper())
+
+
+def exclamation_count(text):
+    return text.count("!")
+
+
+def question_count(text):
+    return text.count("?")
 
 # ------------------------------
-# 6. Verify dataset
+# Create lexical features
 # ------------------------------
-print("\nDataset shape:")
-print(df.shape)
+
+df["word_count"] = df["clean_chat"].apply(word_count)
+
+df["unique_word_count"] = df["clean_chat"].apply(unique_word_count)
+
+df["unique_word_ratio"] = df["clean_chat"].apply(unique_word_ratio)
+
+df["avg_word_length"] = df["clean_chat"].apply(avg_word_length)
+
+df["uppercase_count"] = df["original_chat"].apply(uppercase_count)
+
+df["exclamation_count"] = df["original_chat"].apply(exclamation_count)
+
+df["question_count"] = df["original_chat"].apply(question_count)
+
+# ------------------------------
+# Preview results
+# ------------------------------
+
+print("\nLexical features created successfully")
+
+print("\nSample rows:")
+
+print(
+    df[
+        [
+            "clean_chat",
+            "word_count",
+            "unique_word_count",
+            "unique_word_ratio",
+            "avg_word_length",
+            "uppercase_count",
+            "exclamation_count",
+            "question_count",
+        ]
+    ].head()
+)
+
+# ------------------------------
+# Check feature summary
+# ------------------------------
+
+print("\nFeature summary:")
+
+print(
+    df[
+        [
+            "word_count",
+            "unique_word_count",
+            "unique_word_ratio",
+            "avg_word_length",
+            "uppercase_count",
+            "exclamation_count",
+            "question_count",
+        ]
+    ].describe()
+)
+
+# ==============================
+# SAVE DATASET AFTER STEP 3
+# ==============================
+
+# Define output file name
+output_file = "chat_features_step3_lexical.csv"
+
+# Save dataset
+df.to_csv(output_file, index=False)
+
+print("Dataset saved successfully")
+print("File name:", output_file)
+print("Dataset shape:", df.shape)
