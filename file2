@@ -1,11 +1,13 @@
-Topic model trained
+# Check empty token lists
 
-Topic features created
-     topic_0  topic_1  topic_2  topic_3  topic_4  topic_entropy
-98       NaN      NaN      NaN      NaN      NaN            NaN
-117      NaN      NaN      NaN      NaN      NaN            NaN
-119      NaN      NaN      NaN      NaN      NaN            NaN
-161      NaN      NaN      NaN      NaN      NaN            NaN
-166      NaN      NaN      NaN      NaN      NaN            NaN
-Step 6 dataset saved
-Dataset shape: (150, 52)
+empty_docs = df["tokens"].apply(len) == 0
+
+print("Empty token documents:")
+print(empty_docs.sum())
+
+# Check empty BOW vectors
+
+empty_bow = [len(bow) == 0 for bow in corpus]
+
+print("Empty BOW documents:")
+print(sum(empty_bow))
