@@ -1,79 +1,33 @@
-# ==============================
-# STEP 11 — SCORE FUSION
-# ==============================
-
-import numpy as np
-from sklearn.preprocessing import MinMaxScaler
-
-print("Starting Step 11 — Score Fusion")
-
-# ------------------------------
-# 1. Normalize scores to same scale
-# ------------------------------
-
-scaler = MinMaxScaler()
-
-scaled_df["iso_score_norm"] = scaler.fit_transform(
-    scaled_df[["isolation_score"]]
-)
-
-scaled_df["lof_score_norm"] = scaler.fit_transform(
-    scaled_df[["lof_score"]]
-)
-
-print("Scores normalized")
-
-# ------------------------------
-# 2. Create final risk score
-# ------------------------------
-
-scaled_df["final_risk_score"] = (
-
-    scaled_df["iso_score_norm"] +
-    scaled_df["lof_score_norm"]
-
-) / 2
-
-print("Final risk score created")
-
-# ------------------------------
-# 3. Create final risk label
-# ------------------------------
-
-threshold = 0.95
-
-scaled_df["final_risk_label"] = np.where(
-
-    scaled_df["final_risk_score"] >= threshold,
-
-    "High Risk",
-
-    "Normal"
-
-)
-
-print("Final risk label assigned")
-
-# ------------------------------
-# 4. Show sample
-# ------------------------------
-
-print(
-    scaled_df[
-        [
-            "isolation_score",
-            "lof_score",
-            "final_risk_score",
-            "final_risk_label"
-        ]
-    ].head()
-)
-
-output_file = "chat_features_step11_final_scores.csv"
-
-scaled_df.to_csv(
-    output_file,
-    index=False
-)
-
-print("Step 11 dataset saved")
+<class 'pandas.core.frame.DataFrame'>
+RangeIndex: 75 entries, 0 to 74
+Data columns (total 26 columns):
+ #   Column                 Non-Null Count  Dtype  
+---  ------                 --------------  -----  
+ 0   duration_days          75 non-null     float64
+ 1   duration_hours         75 non-null     float64
+ 2   duration_minutes       75 non-null     float64
+ 3   num_characters         75 non-null     float64
+ 4   num_words              75 non-null     float64
+ 5   word_count             75 non-null     float64
+ 6   unique_word_count      75 non-null     float64
+ 7   unique_word_ratio      75 non-null     float64
+ 8   avg_word_length        75 non-null     float64
+ 9   uppercase_count        75 non-null     float64
+ 10  exclamation_count      75 non-null     float64
+ 11  question_count         75 non-null     float64
+ 12  sentence_count         75 non-null     float64
+ 13  avg_sentence_length    75 non-null     float64
+ 14  short_sentence_ratio   75 non-null     float64
+ 15  long_sentence_ratio    75 non-null     float64
+ 16  punctuation_count      75 non-null     float64
+ 17  sentiment_positive     75 non-null     float64
+ 18  sentiment_neutral      75 non-null     float64
+ 19  sentiment_negative     75 non-null     float64
+ 20  sentiment_compound     75 non-null     float64
+ 21  room_keyword_encoded   75 non-null     float64
+ 22  lexicon_theme_encoded  75 non-null     float64
+ 23  theme_diversity        75 non-null     float64
+ 24  isolation_score        75 non-null     float64
+ 25  isolation_label        75 non-null     object 
+dtypes: float64(25), object(1)
+memory usage: 15.4+ KB
