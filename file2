@@ -1,19 +1,8 @@
-if "Unnamed: 0" in scaled_df.columns:
-
-    scaled_df = scaled_df.drop(
-        columns=["Unnamed: 0"]
-    )
-
-    
-print("Dropped Unnamed: 0 column")
-
-
 # ==============================
 # STEP 9 — ISOLATION FOREST
 # ==============================
 
 from sklearn.ensemble import IsolationForest
-import pandas as pd
 
 print("Starting Step 9 — Isolation Forest")
 
@@ -21,9 +10,9 @@ print("Starting Step 9 — Isolation Forest")
 # 1. Prepare feature matrix
 # ------------------------------
 
+# Use all numeric features
 feature_columns = [
     col for col in scaled_df.columns
-    if col != "chat_id"
 ]
 
 X = scaled_df[feature_columns]
@@ -37,28 +26,28 @@ print("Feature matrix shape:", X.shape)
 iso_model = IsolationForest(
 
     n_estimators=100,
-    contamination=0.05,  # assume 5% anomalies
+    contamination=0.05,   # assume 5% anomalies
     random_state=42
 
 )
 
 iso_model.fit(X)
 
-print("Isolation Forest trained")
+print("Isolation Forest model trained")
 
 # ------------------------------
-# 3. Get anomaly scores
+# 3. Generate anomaly scores
 # ------------------------------
 
 scaled_df["isolation_score"] = iso_model.decision_function(X)
 
 # ------------------------------
-# 4. Get anomaly labels
+# 4. Generate anomaly labels
 # ------------------------------
 
 scaled_df["isolation_label"] = iso_model.predict(X)
 
-# Convert labels:
+# Convert labels
 
 scaled_df["isolation_label"] = scaled_df[
     "isolation_label"
@@ -67,30 +56,21 @@ scaled_df["isolation_label"] = scaled_df[
     -1: "Anomaly"
 })
 
+print("Anomaly scores generated")
+
 # ------------------------------
-# 5. Preview results
+# 5. Show results
 # ------------------------------
 
-print("\nIsolation results:")
+print("\nSample results:")
 
 print(
     scaled_df[
         [
-            "chat_id",
             "isolation_score",
             "isolation_label"
         ]
     ].head()
-)
-
-
-
-print(
-
-    scaled_df["isolation_label"]
-
-    .value_counts()
-
 )
 output_file = "chat_features_step9_isolation.csv"
 
@@ -100,8 +80,3 @@ scaled_df.to_csv(
 )
 
 print("Step 9 dataset saved")
-
-
-
-
-
