@@ -1,152 +1,61 @@
-"""
-STEP 2 — BUILD CORE LINGUISTIC FEATURES
----------------------------------------
-Creates interpretable features from chat text
-"""
+# ==============================
+# STEP 1 — LOAD DATA
+# ==============================
 
+# Import required libraries
 import pandas as pd
-import re
-import numpy as np
 
-# ======================
-# LOAD CLEANED DATA
-# ======================
+# ------------------------------
+# 1. Define file path
+# ------------------------------
+# Replace with your actual file path
+file_path = "chat_data.csv"
 
-df = pd.read_csv("step1_cleaned_data.csv")
+# ------------------------------
+# 2. Load CSV file
+# ------------------------------
+try:
+    df = pd.read_csv(file_path)
+    print("✅ Data loaded successfully")
 
-print("Data loaded")
-print("Rows:", len(df))
+except FileNotFoundError:
+    print("❌ File not found. Check file path.")
 
-# ======================
-# TOKENIZATION
-# ======================
+except Exception as e:
+    print("❌ Error loading file:", e)
 
-def tokenize(text):
+# ------------------------------
+# 3. View first few rows
+# ------------------------------
+print("\nFirst 5 rows of data:")
+print(df.head())
 
-    words = text.split()
+# ------------------------------
+# 4. Check dataset shape
+# ------------------------------
+print("\nDataset shape (rows, columns):")
+print(df.shape)
 
-    return words
+# ------------------------------
+# 5. View column names
+# ------------------------------
+print("\nColumn names:")
+print(df.columns.tolist())
 
-# ======================
-# FEATURE FUNCTIONS
-# ======================
+# ------------------------------
+# 6. Check missing values
+# ------------------------------
+print("\nMissing values per column:")
+print(df.isnull().sum())
 
-def average_word_length(words):
+# ------------------------------
+# 7. Check data types
+# ------------------------------
+print("\nData types:")
+print(df.dtypes)
 
-    if len(words) == 0:
-        return 0
-
-    return np.mean([len(w) for w in words])
-
-
-def unique_word_ratio(words):
-
-    if len(words) == 0:
-        return 0
-
-    return len(set(words)) / len(words)
-
-
-def repeated_word_ratio(words):
-
-    if len(words) == 0:
-        return 0
-
-    repeated = len(words) - len(set(words))
-
-    return repeated / len(words)
-
-
-def uppercase_ratio(text):
-
-    if len(text) == 0:
-        return 0
-
-    upper = sum(1 for c in text if c.isupper())
-
-    return upper / len(text)
-
-
-def punctuation_count(text):
-
-    return len(
-        re.findall(r"[^\w\s]", text)
-    )
-
-
-def question_count(text):
-
-    return text.count("?")
-
-
-def exclamation_count(text):
-
-    return text.count("!")
-
-# ======================
-# APPLY FEATURES
-# ======================
-
-print("Creating linguistic features...")
-
-df["tokens"] = df["clean_chat_text"].apply(tokenize)
-
-df["avg_word_length"] = df["tokens"].apply(
-    average_word_length
-)
-
-df["unique_word_ratio"] = df["tokens"].apply(
-    unique_word_ratio
-)
-
-df["repeated_word_ratio"] = df["tokens"].apply(
-    repeated_word_ratio
-)
-
-df["uppercase_ratio"] = df["chat"].apply(
-    uppercase_ratio
-)
-
-df["punctuation_count"] = df["chat"].apply(
-    punctuation_count
-)
-
-df["question_count"] = df["chat"].apply(
-    question_count
-)
-
-df["exclamation_count"] = df["chat"].apply(
-    exclamation_count
-)
-
-print("Features created")
-
-# ======================
-# QUICK CHECK
-# ======================
-
-print("\nSample features:")
-
-print(
-    df[
-        [
-            "clean_chat_text",
-            "avg_word_length",
-            "unique_word_ratio",
-            "uppercase_ratio",
-            "question_count",
-            "exclamation_count"
-        ]
-    ].head()
-)
-
-# ======================
-# SAVE DATA
-# ======================
-
-df.to_csv(
-    "step2_linguistic_features.csv",
-    index=False
-)
-
-print("\nSaved: step2_linguistic_features.csv")
+# ------------------------------
+# 8. Basic statistics
+# ------------------------------
+print("\nBasic dataset info:")
+df.info()
