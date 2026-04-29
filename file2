@@ -1,88 +1,55 @@
 # ==============================
-# STEP 4 — STRUCTURAL FEATURES
+# STEP 5 — SENTIMENT FEATURES
 # ==============================
 
-import re
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+# Initialize analyzer
+analyzer = SentimentIntensityAnalyzer()
 
 # ------------------------------
-# Helper functions
+# Helper function
 # ------------------------------
 
-def sentence_count(text):
-    sentences = re.split(r'[.!?]+', text)
-    sentences = [s for s in sentences if s.strip() != ""]
-    return len(sentences)
+def get_sentiment_scores(text):
+    scores = analyzer.polarity_scores(text)
 
-
-def avg_sentence_length(text):
-    sentences = re.split(r'[.!?]+', text)
-    sentences = [s.strip() for s in sentences if s.strip() != ""]
-
-    if len(sentences) == 0:
-        return 0
-
-    word_counts = [len(s.split()) for s in sentences]
-    return sum(word_counts) / len(sentences)
-
-
-def short_sentence_ratio(text):
-    sentences = re.split(r'[.!?]+', text)
-    sentences = [s.strip() for s in sentences if s.strip() != ""]
-
-    if len(sentences) == 0:
-        return 0
-
-    short_sentences = [s for s in sentences if len(s.split()) <= 3]
-
-    return len(short_sentences) / len(sentences)
-
-
-def long_sentence_ratio(text):
-    sentences = re.split(r'[.!?]+', text)
-    sentences = [s.strip() for s in sentences if s.strip() != ""]
-
-    if len(sentences) == 0:
-        return 0
-
-    long_sentences = [s for s in sentences if len(s.split()) >= 15]
-
-    return len(long_sentences) / len(sentences)
-
-
-def punctuation_count(text):
-    return len(re.findall(r'[.!?,;:]', text))
+    return pd.Series([
+        scores["pos"],
+        scores["neu"],
+        scores["neg"],
+        scores["compound"]
+    ])
 
 
 # ------------------------------
-# Create structural features
+# Create sentiment features
 # ------------------------------
 
-df["sentence_count"] = df["original_chat"].apply(sentence_count)
-
-df["avg_sentence_length"] = df["original_chat"].apply(avg_sentence_length)
-
-df["short_sentence_ratio"] = df["original_chat"].apply(short_sentence_ratio)
-
-df["long_sentence_ratio"] = df["original_chat"].apply(long_sentence_ratio)
-
-df["punctuation_count"] = df["original_chat"].apply(punctuation_count)
+df[
+    [
+        "sentiment_positive",
+        "sentiment_neutral",
+        "sentiment_negative",
+        "sentiment_compound"
+    ]
+] = df["clean_chat"].apply(get_sentiment_scores)
 
 
 # ------------------------------
 # Preview results
 # ------------------------------
 
-print("\nStructural features created successfully")
+print("\nSentiment features created successfully")
 
 print(
     df[
         [
-            "original_chat",
-            "sentence_count",
-            "avg_sentence_length",
-            "short_sentence_ratio",
-            "long_sentence_ratio",
-            "punctuation_count",
+            "clean_chat",
+            "sentiment_positive",
+            "sentiment_neutral",
+            "sentiment_negative",
+            "sentiment_compound"
         ]
     ].head()
 )
@@ -97,19 +64,19 @@ print("\nFeature summary:")
 print(
     df[
         [
-            "sentence_count",
-            "avg_sentence_length",
-            "short_sentence_ratio",
-            "long_sentence_ratio",
-            "punctuation_count",
+            "sentiment_positive",
+            "sentiment_neutral",
+            "sentiment_negative",
+            "sentiment_compound"
         ]
     ].describe()
 )
-# Save dataset after Step 4
 
-output_file = "chat_features_step4_structural.csv"
+# Save dataset after Step 5
+
+output_file = "chat_features_step5_sentiment.csv"
 
 df.to_csv(output_file, index=False)
 
-print("Step 4 dataset saved")
+print("Step 5 dataset saved")
 print("Dataset shape:", df.shape)
