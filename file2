@@ -1,81 +1,52 @@
-# ==============================
-# STEP 8 — FEATURE SCALING
-# ==============================
+Starting Step 8 — Feature Scaling
+Numeric columns count: 25
+Features used for scaling: 25
 
-import pandas as pd
-from sklearn.preprocessing import StandardScaler
+Scaled feature sample:
+   Unnamed: 0  duration_days  duration_hours  duration_minutes  \
+0   -1.692497            0.0       -0.644532         -0.644532   
+1   -1.664737            0.0        0.230508          0.230508   
+2   -1.662641            0.0        0.608498          0.608498   
+3   -1.613406            0.0        1.214205          1.214205   
+4   -1.608692            0.0       -0.137161         -0.137161   
 
-print("Starting Step 8 — Feature Scaling")
+   num_characters  num_words  word_count  unique_word_count  \
+0       -0.404521  -0.387487   -0.210406           0.053715   
+1       -0.151513  -0.184137   -0.371835          -0.289821   
+2       -0.306144  -0.336860   -0.277047          -0.399971   
+3       -0.361062  -0.348673   -0.210406           0.053715   
+4       -0.339528  -0.326641   -0.135702           0.144234   
 
-# ------------------------------
-# 1. Select numeric columns
-# ------------------------------
+   unique_word_ratio  avg_word_length  ...  short_sentence_ratio  \
+0          -0.034302         0.156966  ...             -0.499750   
+1           0.347680        -1.601814  ...             -0.818822   
+2          -0.873024         2.293463  ...             -0.761125   
+3          -0.034302         0.156966  ...             -0.499750   
+4          -0.260494         0.594671  ...             -0.737505   
 
-numeric_df = df.select_dtypes(
-    include=["int64", "float64"]
-)
+   long_sentence_ratio  punctuation_count  sentiment_positive  \
+0            -0.112074          -0.211066            0.031212   
+1            -1.149274          -0.304167           -0.671056   
+2             0.489936          -0.259765           -0.483785   
+3            -0.112074          -0.211066            0.031212   
+4             0.410630          -0.179555            0.148257   
 
-print("Numeric columns count:", numeric_df.shape[1])
+   sentiment_neutral  sentiment_negative  sentiment_compound  \
+0          -0.254065            0.547430            0.281302   
+1           1.008370           -1.057106            0.276870   
+2           0.712487           -0.726760            0.279363   
+3          -0.254065            0.547430            0.281302   
+4           0.061544           -0.443607            0.282964   
 
-# ------------------------------
-# 2. Remove identifier columns
-# ------------------------------
+   room_keyword_encoded  lexicon_theme_encoded  theme_diversity  
+0             -0.894885                    0.0              0.0  
+1             -0.483759                    0.0              0.0  
+2              1.366310                    0.0              0.0  
+3             -0.894885                    0.0              0.0  
+4             -0.894885                    0.0              0.0  
 
-exclude_cols = [
-    "chat_id"
-]
+[5 rows x 25 columns]
 
-feature_df = numeric_df.drop(
-    columns=exclude_cols,
-    errors="ignore"
-)
-
-print("Features used for scaling:", feature_df.shape[1])
-
-# ------------------------------
-# 3. Apply Standard Scaling
-# ------------------------------
-
-scaler = StandardScaler()
-
-scaled_features = scaler.fit_transform(
-    feature_df
-)
-
-scaled_df = pd.DataFrame(
-    scaled_features,
-    columns=feature_df.columns
-)
-
-# ------------------------------
-# 4. Keep chat_id
-# ------------------------------
-
-if "chat_id" in df.columns:
-
-    scaled_df["chat_id"] = df["chat_id"]
-
-# ------------------------------
-# 5. Preview
-# ------------------------------
-
-print("\nScaled feature sample:")
-
-print(
-    scaled_df.head()
-)
-
-print("\nScaled dataset shape:")
-
-print(
-    scaled_df.shape
-)
-
-output_file = "chat_features_step8_scaled.csv"
-
-scaled_df.to_csv(
-    output_file,
-    index=False
-)
-
-print("Step 8 dataset saved")
+Scaled dataset shape:
+(75, 25)
+Step 8 dataset saved
