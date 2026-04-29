@@ -1,39 +1,35 @@
-<class 'pandas.core.frame.DataFrame'>
-RangeIndex: 75 entries, 0 to 74
-Data columns (total 32 columns):
- #   Column                 Non-Null Count  Dtype  
----  ------                 --------------  -----  
- 0   duration_days          75 non-null     float64
- 1   duration_hours         75 non-null     float64
- 2   duration_minutes       75 non-null     float64
- 3   num_characters         75 non-null     float64
- 4   num_words              75 non-null     float64
- 5   word_count             75 non-null     float64
- 6   unique_word_count      75 non-null     float64
- 7   unique_word_ratio      75 non-null     float64
- 8   avg_word_length        75 non-null     float64
- 9   uppercase_count        75 non-null     float64
- 10  exclamation_count      75 non-null     float64
- 11  question_count         75 non-null     float64
- 12  sentence_count         75 non-null     float64
- 13  avg_sentence_length    75 non-null     float64
- 14  short_sentence_ratio   75 non-null     float64
- 15  long_sentence_ratio    75 non-null     float64
- 16  punctuation_count      75 non-null     float64
- 17  sentiment_positive     75 non-null     float64
- 18  sentiment_neutral      75 non-null     float64
- 19  sentiment_negative     75 non-null     float64
- 20  sentiment_compound     75 non-null     float64
- 21  room_keyword_encoded   75 non-null     float64
- 22  lexicon_theme_encoded  75 non-null     float64
- 23  theme_diversity        75 non-null     float64
- 24  isolation_score        75 non-null     float64
- 25  isolation_label        75 non-null     object 
- 26  lof_label              75 non-null     object 
- 27  lof_score              75 non-null     float64
- 28  iso_score_norm         75 non-null     float64
- 29  lof_score_norm         75 non-null     float64
- 30  final_risk_score       75 non-null     float64
- 31  final_risk_label       75 non-null     object 
-dtypes: float64(29), object(3)
-memory usage: 18.9+ KB
+merged_df = scaled_df.merge(
+
+    original_df[
+        [
+            "chat_id",
+            "chat_readable"
+        ]
+    ],
+
+    on="chat_id",
+    how="left"
+
+)
+
+high_risk_chats = merged_df[
+
+    merged_df["final_risk_label"]
+    == "High Risk"
+
+]
+
+high_risk_chats = high_risk_chats.sort_values(
+
+    by="final_risk_score",
+    ascending=False
+
+)
+
+high_risk_chats[
+    [
+        "chat_id",
+        "final_risk_score",
+        "chat_readable"
+    ]
+]
