@@ -1,61 +1,73 @@
-# ==============================
-# CLEAN DATASET FOR PIPELINE START
-# ==============================
-
 import pandas as pd
+import re
 
-print("Starting dataset cleanup")
+# 🔹 Contraction dictionary (kept)
+contractions = {
+    "don't": "do not",
+    "i'm": "i am",
+    "it's": "it is",
+    "you're": "you are",
+    "won't": "will not",
+    "can't": "cannot",
+}
 
-# ------------------------------
-# 1. Keep only required columns
-# ------------------------------
+def clean_text(text):
+    if pd.isna(text):
+        return ""
 
-columns_to_keep = [
+    # 1. Lowercase
+    text = text.lower()
 
-    "original_chat",
-    "lexicon_name",
-    "room_keyword",
-    "alert_rating"
+    # 2. Remove URLs
+    text = re.sub(r'http\S+|www\S+', '', text)
 
-]
+    # 3. Remove emails
+    text = re.sub(r'\S+@\S+', '', text)
 
-clean_df = original_df[columns_to_keep].copy()
+    # 4. Remove HTML tags
+    text = re.sub(r'<.*?>', '', text)
 
-print("Columns filtered")
+    # 5. Normalize hyphens → space  ⭐ important
+    text = re.sub(r'[-_]', ' ', text)
 
-# ------------------------------
-# 2. Remove default_text if present
-# ------------------------------
+    # 6. Expand contractions
+    for key, value in contractions.items():
+        text = re.sub(r'\b' + key + r'\b', value, text)
 
-if "default_text" in clean_df.columns:
+    # 7. Remove numbers (optional)
+    text = re.sub(r'\d+', '', text)
 
-    clean_df = clean_df.drop(
-        columns=["default_text"]
-    )
+    # 8. Remove punctuation
+    text = re.sub(r'[^\w\s]', '', text)
 
-    print("default_text removed")
+    # 9. Remove extra spaces
+    text = re.sub(r'\s+', ' ', text).strip()
 
-# ------------------------------
-# 3. Add unique integer index
-# ------------------------------
+    return text
 
-clean_df.insert(
 
-    0,                      # position
-    "chat_index",           # column name
-    range(1, len(clean_df) + 1)
+# Apply to both columns
+df["keyword_clean"] = df["keyword"].apply(clean_text)
+df["chat_clean"] = df["chat"].apply(clean_text) 
 
+
+
+import re
+
+df_filtered["is_present"] = df_filtered.apply(
+    lambda row: bool(
+        re.search(r'\b' + re.escape(row["keyword_clean"]) + r'\b', row["chat_clean"])
+    ),
+    axis=1
 )
 
-print("Unique index added")
 
-# ------------------------------
-# 4. Verify
-# ------------------------------
 
-print("Dataset shape:")
-print(clean_df.shape)
+import re
 
-print("\nSample data:")
-
-print(clean_df.head())
+df_filtered["is_present"] = df_filtered.apply(
+    lambda row: bool(
+        re.search(r'\b' + re.escape(row["keyword_clean"]) + r'\b', row["chat_clean"])
+    ),
+    axis=1
+)
