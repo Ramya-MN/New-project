@@ -1,73 +1,13 @@
-import pandas as pd
-import re
+from sentence_transformers import SentenceTransformer
+model = SentenceTransformer(r"../shared/cplegsc/Feb_2026_KT/models/fin-mpnet-base")
 
-# 🔹 Contraction dictionary (kept)
-contractions = {
-    "don't": "do not",
-    "i'm": "i am",
-    "it's": "it is",
-    "you're": "you are",
-    "won't": "will not",
-    "can't": "cannot",
-}
-
-def clean_text(text):
-    if pd.isna(text):
-        return ""
-
-    # 1. Lowercase
-    text = text.lower()
-
-    # 2. Remove URLs
-    text = re.sub(r'http\S+|www\S+', '', text)
-
-    # 3. Remove emails
-    text = re.sub(r'\S+@\S+', '', text)
-
-    # 4. Remove HTML tags
-    text = re.sub(r'<.*?>', '', text)
-
-    # 5. Normalize hyphens → space  ⭐ important
-    text = re.sub(r'[-_]', ' ', text)
-
-    # 6. Expand contractions
-    for key, value in contractions.items():
-        text = re.sub(r'\b' + key + r'\b', value, text)
-
-    # 7. Remove numbers (optional)
-    text = re.sub(r'\d+', '', text)
-
-    # 8. Remove punctuation
-    text = re.sub(r'[^\w\s]', '', text)
-
-    # 9. Remove extra spaces
-    text = re.sub(r'\s+', ' ', text).strip()
-
-    return text
-
-
-# Apply to both columns
-df["keyword_clean"] = df["keyword"].apply(clean_text)
-df["chat_clean"] = df["chat"].apply(clean_text) 
-
-
-
-import re
-
-df_filtered["is_present"] = df_filtered.apply(
-    lambda row: bool(
-        re.search(r'\b' + re.escape(row["keyword_clean"]) + r'\b', row["chat_clean"])
-    ),
-    axis=1
+embeddings = model.encode(
+    df_gmc["text"].tolist(),
+    batch_size=32,
+    show_progress_bar=True,
+    normalize_embeddings=True
 )
+import numpy as np
+X = np.array(embeddings)
+print(X.shape)  # (n_samples, 768)
 
-
-
-import re
-
-df_filtered["is_present"] = df_filtered.apply(
-    lambda row: bool(
-        re.search(r'\b' + re.escape(row["keyword_clean"]) + r'\b', row["chat_clean"])
-    ),
-    axis=1
-)
