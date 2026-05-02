@@ -1,13 +1,55 @@
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, util
+import numpy as np
+import pandas as pd
+
+# Load your FinMPNet model
 model = SentenceTransformer(r"../shared/cplegsc/Feb_2026_KT/models/fin-mpnet-base")
 
-embeddings = model.encode(
-    df_gmc["text"].tolist(),
-    batch_size=32,
-    show_progress_bar=True,
-    normalize_embeddings=True
-)
-import numpy as np
-X = np.array(embeddings)
-print(X.shape)  # (n_samples, 768)
+THRESHOLD = 0.6  # tune if needed
 
+def check_similarity(chat, keyword):
+    # Split chat into lines
+    lines = [line.strip() for line in str(chat).split('\n') if line.strip()]
+    
+    if len(lines) == 0:
+        return 0.0, False
+    
+    # Encode
+    keyword_emb = model.encode(keyword, normalize_embeddings=True)
+    line_embs = model.encode(lines, normalize_embeddings=True)
+    
+    # Cosine similarity (dot product since normalized)
+    scores = np.dot(line_embs, keyword_emb)
+    
+    max_score = float(np.max(scores))
+    
+    return max_score, max_score >= THRESHOLD
+
+
+# Apply row-wise
+results = df_gmc.apply(
+    lambda row: check_similarity(row["chat"], row["keyword"]),
+    axis=1
+)
+
+# Split results
+df_gmc["similarity_score"] = [r[0] for r in results]
+df_gmc["is_present"] = [r[1] for r in results]
+
+
+print(df_gmc["is_present"].value_counts())
+
+
+
+
+not_present_counts = (
+    df_gmc[df_gmc["is_present"] == False]
+    .groupby("keyword")
+    .size()
+    .sort_values(ascending=False)
+)
+
+print(not_present_counts)
+
+
+df_gmc[df_gmc["is_present"] == False][["keyword", "chat", "similarity_score"]].head(10)
